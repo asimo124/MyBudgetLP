@@ -52,11 +52,11 @@ export const useAuthStore = defineStore('auth', () => {
     removeStorage(USER_KEY)
   }
 
-  async function login(username, password) {
+  async function login(email, password) {
     loading.value = true
     error.value = ''
     try {
-      const { data } = await api.post('/api/auth/login.php', { username, password })
+      const { data } = await api.post('/api/login', { email, password })
       if (!data?.token) {
         throw new Error(data?.message || 'Login failed')
       }
@@ -65,7 +65,10 @@ export const useAuthStore = defineStore('auth', () => {
     } catch (err) {
       clear()
       error.value =
-        err.response?.data?.message || err.message || 'Invalid username or password'
+        err.response?.data?.message ||
+        err.response?.data?.errors?.email?.[0] ||
+        err.message ||
+        'Invalid email or password'
       return false
     } finally {
       loading.value = false
@@ -75,10 +78,11 @@ export const useAuthStore = defineStore('auth', () => {
   async function fetchMe() {
     if (!token.value) return false
     try {
-      const { data } = await api.get('/api/auth/me.php')
-      if (data?.user) {
-        user.value = data.user
-        writeStorage(USER_KEY, JSON.stringify(data.user))
+      const { data } = await api.get('/api/me')
+      const sessionUser = data?.user ?? data
+      if (sessionUser?.id) {
+        user.value = sessionUser
+        writeStorage(USER_KEY, JSON.stringify(sessionUser))
         return true
       }
       clear()
@@ -94,7 +98,7 @@ export const useAuthStore = defineStore('auth', () => {
   async function logout() {
     try {
       if (token.value) {
-        await api.post('/api/auth/logout.php')
+        await api.post('/api/logout')
       }
     } catch {
       // ignore network errors on logout

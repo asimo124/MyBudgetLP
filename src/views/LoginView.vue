@@ -8,7 +8,7 @@ const auth = useAuthStore()
 const route = useRoute()
 const router = useRouter()
 
-const username = ref('')
+const email = ref('')
 const password = ref('')
 const showPassword = ref(false)
 
@@ -23,7 +23,7 @@ function redirectAfterLogin() {
 }
 
 async function onSubmit() {
-  const ok = await auth.login(username.value.trim(), password.value)
+  const ok = await auth.login(email.value.trim(), password.value)
   if (ok) {
     redirectAfterLogin()
   }
@@ -36,7 +36,7 @@ async function onSubmit() {
       <div class="flex h-full flex-col items-center justify-center bg-primary-50 dark:bg-dark-1">
         <img src="/images/logo.png" alt="MyBudget" class="mb-6 max-w-[220px]" />
         <p class="max-w-sm text-center text-lg text-neutral-600 dark:text-neutral-300">
-          Budget admin powered by your BillsSite API
+          Budget admin powered by the recipes Laravel API
         </p>
       </div>
     </div>
@@ -53,21 +53,21 @@ async function onSubmit() {
             Sign in to MyBudget
           </h2>
           <p class="text-neutral-500 dark:text-neutral-400">
-            Use your BillsSite username and password
+            Use your Laravel email and password
           </p>
         </div>
 
         <form class="space-y-4" @submit.prevent="onSubmit">
           <div>
-            <label class="mb-1.5 block text-sm font-medium" for="username">Username</label>
+            <label class="mb-1.5 block text-sm font-medium" for="email">Email</label>
             <input
-              id="username"
-              v-model="username"
-              type="text"
+              id="email"
+              v-model="email"
+              type="email"
               autocomplete="username"
               required
               class="form-control h-14 rounded-xl px-4"
-              placeholder="Username"
+              placeholder="Email"
             />
           </div>
           <div>

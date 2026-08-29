@@ -11,8 +11,7 @@ init()
 
 const displayName = computed(() => {
   if (!auth.user) return 'User'
-  const parts = [auth.user.fname, auth.user.lname].filter(Boolean)
-  return parts.length ? parts.join(' ') : auth.user.username
+  return auth.user.name || auth.user.email || 'User'
 })
 
 function toggleSidebar() {
