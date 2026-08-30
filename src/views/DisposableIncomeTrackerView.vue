@@ -18,6 +18,11 @@ const TRANSACTION_TYPES = [
   { value: 'impulse buy', label: 'Impulse buy' },
 ]
 
+const TRACKER_FILTER_TRANSACTION_TYPES = [
+  { value: 'blank', label: 'Blank' },
+  ...TRANSACTION_TYPES,
+]
+
 const SEARCH_TYPES = [
   { value: 'contains', label: 'Contains' },
   { value: 'starts with', label: 'Starts with' },
@@ -989,7 +994,7 @@ onBeforeUnmount(() => {
               <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Transaction type</label>
               <div class="flex flex-wrap gap-4">
                 <label
-                  v-for="type in TRANSACTION_TYPES"
+                  v-for="type in TRACKER_FILTER_TRANSACTION_TYPES"
                   :key="type.value"
                   class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
                 >
@@ -1163,6 +1168,11 @@ onBeforeUnmount(() => {
                 </tr>
               </tbody>
             </table>
+          </div>
+          <div class="mt-3 flex justify-end border-t border-gray-200 pt-3 dark:border-gray-700">
+            <span class="text-sm font-semibold text-gray-700 dark:text-gray-300">
+              {{ transactions.length }} record{{ transactions.length === 1 ? '' : 's' }}
+            </span>
           </div>
         </div>
       </div>
