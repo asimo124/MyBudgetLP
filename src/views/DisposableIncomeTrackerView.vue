@@ -18,6 +18,24 @@ const TRANSACTION_TYPES = [
   { value: 'impulse buy', label: 'Impulse buy' },
 ]
 
+const TRACKER_START_PAYCHECK_DATE_KEY = 'disposableTrackerStartPaycheckDate'
+const TRACKER_END_PAYCHECK_DATE_KEY = 'disposableTrackerEndPaycheckDate'
+const TRACKER_SORT_BY_KEY = 'disposableTrackerSortBy'
+const TRACKER_SORT_DIR_KEY = 'disposableTrackerSortDir'
+
+const TRACKER_SORT_BY_OPTIONS = ['name', 'transaction_date', 'amount']
+const TRACKER_SORT_DIR_OPTIONS = ['ASC', 'DESC']
+
+function readStoredTrackerSortBy() {
+  const stored = localStorage.getItem(TRACKER_SORT_BY_KEY)
+  return TRACKER_SORT_BY_OPTIONS.includes(stored) ? stored : 'transaction_date'
+}
+
+function readStoredTrackerSortDir() {
+  const stored = localStorage.getItem(TRACKER_SORT_DIR_KEY)
+  return TRACKER_SORT_DIR_OPTIONS.includes(stored) ? stored : 'ASC'
+}
+
 const paycheckDate = ref('')
 const transactionDate = ref(null)
 const trackerStartPaycheckDate = ref('')
@@ -29,6 +47,8 @@ const trackerKeyword1 = ref('')
 const trackerKeyword2Mode = ref('includes')
 const trackerKeyword2Match = ref('contains')
 const trackerKeyword2 = ref('')
+const trackerSortBy = ref(readStoredTrackerSortBy())
+const trackerSortDir = ref(readStoredTrackerSortDir())
 const trackerSelectedIds = ref([])
 const trackerBulkTransactionType = ref('disposable')
 const trackerBulkUpdating = ref(false)
@@ -157,9 +177,14 @@ function getDefaultTrackerPaycheckRange() {
 
 function initTrackerPaycheckDates() {
   const range = getDefaultTrackerPaycheckRange()
-  trackerStartPaycheckDate.value = range.start
-  trackerEndPaycheckDate.value = range.end
-  paycheckDate.value = range.end
+  const savedStart = localStorage.getItem(TRACKER_START_PAYCHECK_DATE_KEY)
+  const savedEnd = localStorage.getItem(TRACKER_END_PAYCHECK_DATE_KEY)
+  const startValid = savedStart && startPaycheckDateOptions.value.some((option) => option.value === savedStart)
+  const endValid = savedEnd && endPaycheckDateOptions.value.some((option) => option.value === savedEnd)
+
+  trackerStartPaycheckDate.value = startValid ? savedStart : range.start
+  trackerEndPaycheckDate.value = endValid ? savedEnd : range.end
+  paycheckDate.value = trackerEndPaycheckDate.value
 }
 
 function syncChartPaycheckDate() {
@@ -206,11 +231,37 @@ watch(trackerKeyword2Mode, (mode) => {
   }
 })
 
+watch(trackerStartPaycheckDate, (value) => {
+  if (value) {
+    localStorage.setItem(TRACKER_START_PAYCHECK_DATE_KEY, value)
+  }
+})
+
+watch(trackerEndPaycheckDate, (value) => {
+  if (value) {
+    localStorage.setItem(TRACKER_END_PAYCHECK_DATE_KEY, value)
+  }
+})
+
+watch(trackerSortBy, (value) => {
+  if (TRACKER_SORT_BY_OPTIONS.includes(value)) {
+    localStorage.setItem(TRACKER_SORT_BY_KEY, value)
+  }
+})
+
+watch(trackerSortDir, (value) => {
+  if (TRACKER_SORT_DIR_OPTIONS.includes(value)) {
+    localStorage.setItem(TRACKER_SORT_DIR_KEY, value)
+  }
+})
+
 async function loadTransactions() {
   try {
     const params = {
       start_paycheck_date: trackerStartPaycheckDate.value,
       end_paycheck_date: trackerEndPaycheckDate.value,
+      sort_by: trackerSortBy.value,
+      sort_dir: trackerSortDir.value,
     }
 
     if (trackerTransactionTypes.value.length) {
@@ -747,7 +798,13 @@ onBeforeUnmount(() => {
                   <option value="includes">Includes</option>
                   <option value="excludes">Excludes</option>
                 </select>
-                <input v-model="trackerKeyword1" type="text" placeholder="Keyword…" class="form-input min-w-0 flex-1" />
+                <input
+                  v-model="trackerKeyword1"
+                  type="text"
+                  placeholder="Keyword…"
+                  class="form-input min-w-0 flex-1"
+                  @keydown.enter.prevent="applyTrackerFilters"
+                />
                 <select v-model="trackerKeyword1Match" class="form-input w-36">
                   <option value="contains">Contains</option>
                   <option value="starts_with">Starts with</option>
@@ -763,7 +820,13 @@ onBeforeUnmount(() => {
                   <option value="includes">Includes</option>
                   <option value="excludes">Excludes</option>
                 </select>
-                <input v-model="trackerKeyword2" type="text" placeholder="Keyword…" class="form-input min-w-0 flex-1" />
+                <input
+                  v-model="trackerKeyword2"
+                  type="text"
+                  placeholder="Keyword…"
+                  class="form-input min-w-0 flex-1"
+                  @keydown.enter.prevent="applyTrackerFilters"
+                />
                 <select v-model="trackerKeyword2Match" class="form-input w-36">
                   <option value="contains">Contains</option>
                   <option value="starts_with">Starts with</option>
@@ -771,6 +834,24 @@ onBeforeUnmount(() => {
                   <option v-if="trackerKeyword2Mode === 'includes'" value="regex">Regex</option>
                 </select>
               </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Sort by</label>
+              <select v-model="trackerSortBy" class="form-input w-full">
+                <option value="name">Name</option>
+                <option value="transaction_date">Transaction date</option>
+                <option value="amount">Amount</option>
+              </select>
+            </div>
+            <div>
+              <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Sort direction</label>
+              <select v-model="trackerSortDir" class="form-input w-full">
+                <option value="ASC">Ascending</option>
+                <option value="DESC">Descending</option>
+              </select>
             </div>
           </div>
 
@@ -790,20 +871,20 @@ onBeforeUnmount(() => {
         <div class="card-body">
           <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
             <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">Rocket Money Data</h3>
-            <div class="flex flex-wrap items-center gap-2">
-              <select v-model="trackerBulkTransactionType" class="form-input w-40">
-                <option v-for="type in TRANSACTION_TYPES" :key="'bulk-' + type.value" :value="type.value">
-                  {{ type.label }}
-                </option>
-              </select>
+            <div class="flex shrink-0 flex-nowrap items-center gap-2">
               <button
                 type="button"
-                class="btn bg-primary-500 text-white hover:bg-primary-600"
+                class="btn min-w-[8.75rem] shrink-0 whitespace-nowrap bg-primary-500 text-white hover:bg-primary-600"
                 :disabled="trackerBulkUpdating || !trackerSelectedIds.length"
                 @click="markSelectedTransactionType"
               >
                 {{ trackerBulkUpdating ? 'Updating…' : 'Mark selected' }}
               </button>
+              <select v-model="trackerBulkTransactionType" class="form-input w-40">
+                <option v-for="type in TRANSACTION_TYPES" :key="'bulk-' + type.value" :value="type.value">
+                  {{ type.label }}
+                </option>
+              </select>
             </div>
           </div>
           <div class="overflow-x-auto overflow-y-auto max-h-[450px]">
