@@ -1031,7 +1031,7 @@ onBeforeUnmount(() => {
                     type="button"
                     class="absolute inset-y-0 right-0 px-3 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                     aria-label="Clear keyword 1"
-                    @click="trackerKeyword1 = ''"
+                    @click="trackerKeyword1 = ''; applyTrackerFilters()"
                   >
                     ×
                   </button>
@@ -1064,7 +1064,7 @@ onBeforeUnmount(() => {
                     type="button"
                     class="absolute inset-y-0 right-0 px-3 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                     aria-label="Clear keyword 2"
-                    @click="trackerKeyword2 = ''"
+                    @click="trackerKeyword2 = ''; applyTrackerFilters()"
                   >
                     ×
                   </button>
