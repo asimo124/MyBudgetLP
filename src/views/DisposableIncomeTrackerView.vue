@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ApexCharts from 'apexcharts'
 import api from '@/api/client'
 
@@ -12,9 +12,28 @@ const uploadPreviewFile = ref(null)
 const uploadingImport = ref(false)
 const uploadingPreview = ref(false)
 
+const TRANSACTION_TYPES = [
+  { value: 'disposable', label: 'Disposable' },
+  { value: 'covered', label: 'Covered' },
+  { value: 'impulse buy', label: 'Impulse buy' },
+]
+
 const paycheckDate = ref('')
-const paycheckDateDisplay = ref('')
 const transactionDate = ref(null)
+const trackerStartPaycheckDate = ref('')
+const trackerEndPaycheckDate = ref('')
+const trackerTransactionTypes = ref(['disposable'])
+const trackerKeyword1Mode = ref('includes')
+const trackerKeyword1Match = ref('contains')
+const trackerKeyword1 = ref('')
+const trackerKeyword2Mode = ref('includes')
+const trackerKeyword2Match = ref('contains')
+const trackerKeyword2 = ref('')
+const trackerSelectedIds = ref([])
+const trackerBulkTransactionType = ref('disposable')
+const trackerBulkUpdating = ref(false)
+const startPaycheckDateOptions = ref([])
+const endPaycheckDateOptions = ref([])
 const categoryName = ref(null)
 const drilldownLevel = ref('root')
 const chartLabel = ref('Dates')
@@ -71,81 +90,203 @@ function initDefaultDateRange() {
   allTxStartDate.value = startStr
 }
 
-function getDefaultPaycheckDate() {
+function formatDateISO(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function lastDayOfMonth(year, month) {
+  return new Date(year, month + 1, 0).getDate()
+}
+
+function formatPaycheckDateLabel(date) {
+  return date.toLocaleDateString('en-US', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  })
+}
+
+function generatePaycheckDateOptions() {
+  const startOptions = []
+  const endOptions = []
+  const now = new Date()
+  const startYear = now.getFullYear() - 2
+  const endYear = now.getFullYear() + 1
+
+  for (let year = startYear; year <= endYear; year++) {
+    for (let month = 0; month < 12; month++) {
+      const first = new Date(year, month, 1)
+      const sixteenth = new Date(year, month, 16)
+      const fifteenth = new Date(year, month, 15)
+      const last = new Date(year, month, lastDayOfMonth(year, month))
+
+      startOptions.push({ value: formatDateISO(first), label: formatPaycheckDateLabel(first) })
+      startOptions.push({ value: formatDateISO(sixteenth), label: formatPaycheckDateLabel(sixteenth) })
+      endOptions.push({ value: formatDateISO(fifteenth), label: formatPaycheckDateLabel(fifteenth) })
+      endOptions.push({ value: formatDateISO(last), label: formatPaycheckDateLabel(last) })
+    }
+  }
+
+  startOptions.sort((a, b) => a.value.localeCompare(b.value))
+  endOptions.sort((a, b) => a.value.localeCompare(b.value))
+  startPaycheckDateOptions.value = startOptions
+  endPaycheckDateOptions.value = endOptions
+}
+
+function getDefaultTrackerPaycheckRange() {
   const today = new Date()
   const day = today.getDate()
-  let paycheck
+  const year = today.getFullYear()
+  const month = today.getMonth()
 
   if (day <= 15) {
-    const previousMonth = today.getMonth() - 1
-    const year = previousMonth < 0 ? today.getFullYear() - 1 : today.getFullYear()
-    paycheck = new Date(year, previousMonth < 0 ? 11 : previousMonth, 15)
-  } else {
-    paycheck = new Date(today.getFullYear(), today.getMonth(), 1)
-  }
-
-  paycheckDateDisplay.value = paycheck.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-  return paycheck.toISOString().split('T')[0]
-}
-
-function previousDate() {
-  const [year, month, day] = paycheckDate.value.split('-').map(Number)
-  const currentDate = new Date(year, month - 1, day)
-  let newDate
-
-  if (currentDate.getDate() === 15) {
-    newDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1)
-  } else if (currentDate.getMonth() === 0) {
-    newDate = new Date(currentDate.getFullYear() - 1, 11, 15)
-  } else {
-    newDate = new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 15)
-  }
-
-  paycheckDate.value = newDate.toISOString().split('T')[0]
-  paycheckDateDisplay.value = newDate.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-  loadData()
-}
-
-function nextDate() {
-  const [year, month, day] = paycheckDate.value.split('-').map(Number)
-  const currentDate = new Date(year, month - 1, day)
-  let newDate
-
-  if (currentDate.getDate() === 15) {
-    if (currentDate.getMonth() === 11) {
-      newDate = new Date(currentDate.getFullYear() + 1, 0, 1)
-    } else {
-      newDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1)
+    return {
+      start: formatDateISO(new Date(year, month, 1)),
+      end: formatDateISO(new Date(year, month, 15)),
     }
-  } else {
-    newDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), 15)
   }
 
-  paycheckDate.value = newDate.toISOString().split('T')[0]
-  paycheckDateDisplay.value = newDate.toLocaleDateString('en-US', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric',
-  })
-  loadData()
+  return {
+    start: formatDateISO(new Date(year, month, 16)),
+    end: formatDateISO(new Date(year, month, lastDayOfMonth(year, month))),
+  }
 }
+
+function initTrackerPaycheckDates() {
+  const range = getDefaultTrackerPaycheckRange()
+  trackerStartPaycheckDate.value = range.start
+  trackerEndPaycheckDate.value = range.end
+  paycheckDate.value = range.end
+}
+
+function syncChartPaycheckDate() {
+  paycheckDate.value = trackerEndPaycheckDate.value
+}
+
+function toggleTrackerTransactionType(type) {
+  if (trackerTransactionTypes.value.includes(type)) {
+    trackerTransactionTypes.value = trackerTransactionTypes.value.filter((value) => value !== type)
+  } else {
+    trackerTransactionTypes.value = [...trackerTransactionTypes.value, type]
+  }
+}
+
+const trackerAllSelected = computed({
+  get() {
+    return (
+      transactions.value.length > 0 &&
+      transactions.value.every((item) => trackerSelectedIds.value.includes(item.id))
+    )
+  },
+  set(checked) {
+    trackerSelectedIds.value = checked ? transactions.value.map((item) => item.id) : []
+  },
+})
+
+function toggleTrackerSelected(id) {
+  if (trackerSelectedIds.value.includes(id)) {
+    trackerSelectedIds.value = trackerSelectedIds.value.filter((value) => value !== id)
+  } else {
+    trackerSelectedIds.value = [...trackerSelectedIds.value, id]
+  }
+}
+
+watch(trackerKeyword1Mode, (mode) => {
+  if (mode === 'excludes' && trackerKeyword1Match.value === 'regex') {
+    trackerKeyword1Match.value = 'contains'
+  }
+})
+
+watch(trackerKeyword2Mode, (mode) => {
+  if (mode === 'excludes' && trackerKeyword2Match.value === 'regex') {
+    trackerKeyword2Match.value = 'contains'
+  }
+})
 
 async function loadTransactions() {
   try {
-    const { data } = await api.get('/api/loadDisposableTransactions.php', {
-      params: { paycheck_date: paycheckDate.value },
-    })
+    const params = {
+      start_paycheck_date: trackerStartPaycheckDate.value,
+      end_paycheck_date: trackerEndPaycheckDate.value,
+    }
+
+    if (trackerTransactionTypes.value.length) {
+      params.transaction_types = trackerTransactionTypes.value
+    }
+
+    if (trackerKeyword1.value.trim()) {
+      params.keyword1 = trackerKeyword1.value.trim()
+      params.keyword1_mode = trackerKeyword1Mode.value
+      params.keyword1_match = trackerKeyword1Match.value
+    }
+
+    if (trackerKeyword2.value.trim()) {
+      params.keyword2 = trackerKeyword2.value.trim()
+      params.keyword2_mode = trackerKeyword2Mode.value
+      params.keyword2_match = trackerKeyword2Match.value
+    }
+
+    const { data } = await api.get('/api/loadDisposableTransactions.php', { params })
     transactions.value = data?.items || []
+    trackerSelectedIds.value = []
   } catch {
     transactions.value = []
+    trackerSelectedIds.value = []
+  }
+}
+
+async function applyTrackerFilters() {
+  if (!trackerTransactionTypes.value.length) {
+    mainError.value = 'Select at least one transaction type.'
+    return
+  }
+
+  if (
+    trackerStartPaycheckDate.value &&
+    trackerEndPaycheckDate.value &&
+    trackerStartPaycheckDate.value > trackerEndPaycheckDate.value
+  ) {
+    mainError.value = 'Start paycheck date must be on or before end paycheck date.'
+    return
+  }
+
+  mainError.value = ''
+  syncChartPaycheckDate()
+  loading.value = true
+  try {
+    await Promise.all([loadTransactions(), loadChartData()])
+  } finally {
+    loading.value = false
+  }
+}
+
+async function markSelectedTransactionType() {
+  if (!trackerSelectedIds.value.length) {
+    mainError.value = 'Select at least one transaction.'
+    return
+  }
+
+  trackerBulkUpdating.value = true
+  mainMsg.value = ''
+  mainError.value = ''
+  try {
+    const { data } = await api.post('/api/updateDisposableTransactionTypes.php', {
+      ids: trackerSelectedIds.value,
+      transaction_type: trackerBulkTransactionType.value,
+    })
+    if (data?.success) {
+      mainMsg.value = `Updated ${data.updated} transaction(s).`
+      await loadTransactions()
+    } else {
+      mainError.value = data?.error || 'Update failed.'
+    }
+  } catch (err) {
+    mainError.value = err.response?.data?.error || err.response?.data?.message || 'Update failed.'
+  } finally {
+    trackerBulkUpdating.value = false
   }
 }
 
@@ -363,19 +504,6 @@ async function loadChartData() {
   }
 }
 
-async function updateIsCovered(id, isCovered) {
-  try {
-    const { data } = await api.get('/api/updateDisposableTransactionCovered.php', {
-      params: { id, is_covered: isCovered },
-    })
-    if (data?.success) {
-      await loadData()
-    }
-  } catch {
-    /* ignore */
-  }
-}
-
 async function updateAllNotCovered() {
   try {
     const { data } = await api.get('/api/updateAllNotCovered.php', {
@@ -390,6 +518,7 @@ async function updateAllNotCovered() {
 }
 
 async function loadData() {
+  syncChartPaycheckDate()
   await Promise.all([loadTransactions(), loadChartData(), loadTransactionCategories()])
 }
 
@@ -478,7 +607,8 @@ function initChart() {
 
 onMounted(async () => {
   initDefaultDateRange()
-  paycheckDate.value = getDefaultPaycheckDate()
+  generatePaycheckDateOptions()
+  initTrackerPaycheckDates()
   loading.value = true
   try {
     await loadData()
@@ -565,93 +695,158 @@ onBeforeUnmount(() => {
             >
               {{ uploadingImport ? 'Uploading…' : 'Upload File' }}
             </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body space-y-4">
+          <h3 class="text-sm font-semibold text-gray-700 dark:text-gray-300">Tracker filters</h3>
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Start paycheck date</label>
+              <select v-model="trackerStartPaycheckDate" class="form-input w-full">
+                <option v-for="option in startPaycheckDateOptions" :key="'start-' + option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+            <div>
+              <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">End paycheck date</label>
+              <select v-model="trackerEndPaycheckDate" class="form-input w-full">
+                <option v-for="option in endPaycheckDateOptions" :key="'end-' + option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+            <div class="sm:col-span-2">
+              <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Transaction type</label>
+              <div class="flex flex-wrap gap-4">
+                <label
+                  v-for="type in TRANSACTION_TYPES"
+                  :key="type.value"
+                  class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300"
+                >
+                  <input
+                    type="checkbox"
+                    class="rounded"
+                    :checked="trackerTransactionTypes.includes(type.value)"
+                    @change="toggleTrackerTransactionType(type.value)"
+                  />
+                  {{ type.label }}
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div class="space-y-2">
+              <label class="block text-sm text-gray-600 dark:text-gray-400">Keyword search 1</label>
+              <div class="flex flex-wrap gap-2">
+                <select v-model="trackerKeyword1Mode" class="form-input w-32">
+                  <option value="includes">Includes</option>
+                  <option value="excludes">Excludes</option>
+                </select>
+                <input v-model="trackerKeyword1" type="text" placeholder="Keyword…" class="form-input min-w-0 flex-1" />
+                <select v-model="trackerKeyword1Match" class="form-input w-36">
+                  <option value="contains">Contains</option>
+                  <option value="starts_with">Starts with</option>
+                  <option value="ends_with">Ends with</option>
+                  <option v-if="trackerKeyword1Mode === 'includes'" value="regex">Regex</option>
+                </select>
+              </div>
+            </div>
+            <div class="space-y-2">
+              <label class="block text-sm text-gray-600 dark:text-gray-400">Keyword search 2</label>
+              <div class="flex flex-wrap gap-2">
+                <select v-model="trackerKeyword2Mode" class="form-input w-32">
+                  <option value="includes">Includes</option>
+                  <option value="excludes">Excludes</option>
+                </select>
+                <input v-model="trackerKeyword2" type="text" placeholder="Keyword…" class="form-input min-w-0 flex-1" />
+                <select v-model="trackerKeyword2Match" class="form-input w-36">
+                  <option value="contains">Contains</option>
+                  <option value="starts_with">Starts with</option>
+                  <option value="ends_with">Ends with</option>
+                  <option v-if="trackerKeyword2Mode === 'includes'" value="regex">Regex</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex justify-end border-t border-gray-200 pt-4 dark:border-gray-700">
             <button
               type="button"
-              class="btn bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200"
-              @click="updateAllNotCovered"
+              class="btn bg-primary-500 text-white hover:bg-primary-600"
+              @click="applyTrackerFilters"
             >
-              Mark All Not Covered
+              Apply filters
             </button>
           </div>
         </div>
       </div>
 
-      <div class="grid grid-cols-3 items-center gap-2">
-        <button
-          type="button"
-          class="btn bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200"
-          @click="previousDate"
-        >
-          &lt;
-        </button>
-        <span class="text-center text-lg font-medium text-gray-900 dark:text-white">
-          {{ paycheckDateDisplay }}
-        </span>
-        <button
-          type="button"
-          class="btn bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 justify-self-end"
-          @click="nextDate"
-        >
-          &gt;
-        </button>
-      </div>
-
       <div class="card">
         <div class="card-body">
-          <h3 class="mb-3 text-sm font-medium text-gray-700 dark:text-gray-300">Rocket Money Data</h3>
+          <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h3 class="text-sm font-medium text-gray-700 dark:text-gray-300">Rocket Money Data</h3>
+            <div class="flex flex-wrap items-center gap-2">
+              <select v-model="trackerBulkTransactionType" class="form-input w-40">
+                <option v-for="type in TRANSACTION_TYPES" :key="'bulk-' + type.value" :value="type.value">
+                  {{ type.label }}
+                </option>
+              </select>
+              <button
+                type="button"
+                class="btn bg-primary-500 text-white hover:bg-primary-600"
+                :disabled="trackerBulkUpdating || !trackerSelectedIds.length"
+                @click="markSelectedTransactionType"
+              >
+                {{ trackerBulkUpdating ? 'Updating…' : 'Mark selected' }}
+              </button>
+            </div>
+          </div>
           <div class="overflow-x-auto overflow-y-auto max-h-[450px]">
             <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
               <thead class="bg-gray-50 dark:bg-gray-800">
                 <tr>
+                  <th class="px-3 py-2 w-10">
+                    <input v-model="trackerAllSelected" type="checkbox" class="rounded" title="Select all" />
+                  </th>
+                  <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 w-16">Date</th>
                   <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Name</th>
                   <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 w-24">Amount</th>
-                  <th class="px-3 py-2 w-16"></th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
                 <tr v-if="!transactions.length">
-                  <td colspan="3" class="px-3 py-6 text-center text-sm italic text-gray-500">
+                  <td colspan="4" class="px-3 py-6 text-center text-sm italic text-gray-500">
                     No rocket money data available
                   </td>
                 </tr>
-                <tr v-for="item in transactions" :key="item.id" class="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                <tr
+                  v-for="item in transactions"
+                  :key="item.id"
+                  class="hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                >
+                  <td class="px-3 py-2">
+                    <input
+                      type="checkbox"
+                      class="rounded"
+                      :checked="trackerSelectedIds.includes(item.id)"
+                      @change="toggleTrackerSelected(item.id)"
+                    />
+                  </td>
+                  <td class="px-3 py-2 text-sm text-gray-900 dark:text-gray-100 whitespace-nowrap">
+                    {{ item.transaction_date_display || item.transaction_date }}
+                  </td>
                   <td class="px-3 py-2 text-sm text-gray-900 dark:text-gray-100 break-words">{{ item.name }}</td>
                   <td class="px-3 py-2 text-sm text-gray-900 dark:text-gray-100">${{ item.amount }}</td>
-                  <td class="px-3 py-2">
-                    <button
-                      type="button"
-                      class="rounded bg-red-500 px-2 py-1 text-xs font-semibold text-white hover:bg-red-600"
-                      title="Mark covered"
-                      @click="updateIsCovered(item.id, 1)"
-                    >
-                      X
-                    </button>
-                  </td>
                 </tr>
               </tbody>
             </table>
           </div>
         </div>
-      </div>
-
-      <div class="grid grid-cols-3 items-center gap-2">
-        <button
-          type="button"
-          class="btn bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200"
-          @click="previousDate"
-        >
-          &lt;
-        </button>
-        <span class="text-center text-lg font-medium text-gray-900 dark:text-white">
-          {{ paycheckDateDisplay }}
-        </span>
-        <button
-          type="button"
-          class="btn bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 justify-self-end"
-          @click="nextDate"
-        >
-          &gt;
-        </button>
       </div>
 
       <div class="card">
