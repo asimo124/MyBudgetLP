@@ -268,7 +268,9 @@ function initChartPaycheckDates() {
   chartEndPaycheckDate.value = endValid ? savedEnd : range.end
 }
 
-function syncChartPaycheckDate() {
+function syncChartPaycheckDatesFromTracker() {
+  chartStartPaycheckDate.value = trackerStartPaycheckDate.value
+  chartEndPaycheckDate.value = trackerEndPaycheckDate.value
   paycheckDate.value = trackerEndPaycheckDate.value
 }
 
@@ -382,6 +384,19 @@ async function loadTransactions() {
   }
 }
 
+async function reloadChartData() {
+  impulseChartLevel.value = 'root'
+  impulseDayTransactions.value = []
+  impulseDayTransactionsAmountTotal.value = 0
+  impulseDayDateDisplay.value = ''
+  impulseChartLabel.value = 'Impulse Buys'
+  await nextTick()
+  if (chartInstance) {
+    chartInstance.resize()
+  }
+  await loadChartData()
+}
+
 async function applyTrackerFilters() {
   if (
     trackerStartPaycheckDate.value &&
@@ -393,10 +408,11 @@ async function applyTrackerFilters() {
   }
 
   mainError.value = ''
-  syncChartPaycheckDate()
+  syncChartPaycheckDatesFromTracker()
   loading.value = true
   try {
     await loadTransactions()
+    await reloadChartData()
   } finally {
     loading.value = false
   }
@@ -413,18 +429,9 @@ async function applyChartFilters() {
   }
 
   mainError.value = ''
-  impulseChartLevel.value = 'root'
-  impulseDayTransactions.value = []
-  impulseDayTransactionsAmountTotal.value = 0
-  impulseDayDateDisplay.value = ''
-  impulseChartLabel.value = 'Impulse Buys'
   loading.value = true
   try {
-    await nextTick()
-    if (chartInstance) {
-      chartInstance.resize()
-    }
-    await loadChartData()
+    await reloadChartData()
   } finally {
     loading.value = false
   }
@@ -869,7 +876,7 @@ async function updateAllNotCovered() {
 }
 
 async function loadData() {
-  syncChartPaycheckDate()
+  syncChartPaycheckDatesFromTracker()
   await Promise.all([loadTransactions(), loadChartData(), loadTransactionCategories()])
 }
 
