@@ -135,10 +135,6 @@ function formatDateISO(date) {
   return `${year}-${month}-${day}`
 }
 
-function lastDayOfMonth(year, month) {
-  return new Date(year, month + 1, 0).getDate()
-}
-
 function formatPaycheckDateLabel(date) {
   return date.toLocaleDateString('en-US', {
     year: 'numeric',
@@ -156,15 +152,15 @@ function generatePaycheckDateOptions() {
 
   for (let year = startYear; year <= endYear; year++) {
     for (let month = 0; month < 12; month++) {
-      const first = new Date(year, month, 1)
-      const sixteenth = new Date(year, month, 16)
-      const fifteenth = new Date(year, month, 15)
-      const last = new Date(year, month, lastDayOfMonth(year, month))
+      const fourteenth = new Date(year, month, 14)
+      const twentyEighth = new Date(year, month, 28)
+      const thirteenth = new Date(year, month, 13)
+      const twentySeventh = new Date(year, month, 27)
 
-      startOptions.push({ value: formatDateISO(first), label: formatPaycheckDateLabel(first) })
-      startOptions.push({ value: formatDateISO(sixteenth), label: formatPaycheckDateLabel(sixteenth) })
-      endOptions.push({ value: formatDateISO(fifteenth), label: formatPaycheckDateLabel(fifteenth) })
-      endOptions.push({ value: formatDateISO(last), label: formatPaycheckDateLabel(last) })
+      startOptions.push({ value: formatDateISO(fourteenth), label: formatPaycheckDateLabel(fourteenth) })
+      startOptions.push({ value: formatDateISO(twentyEighth), label: formatPaycheckDateLabel(twentyEighth) })
+      endOptions.push({ value: formatDateISO(thirteenth), label: formatPaycheckDateLabel(thirteenth) })
+      endOptions.push({ value: formatDateISO(twentySeventh), label: formatPaycheckDateLabel(twentySeventh) })
     }
   }
 
@@ -180,16 +176,29 @@ function getDefaultTrackerPaycheckRange() {
   const year = today.getFullYear()
   const month = today.getMonth()
 
-  if (day <= 15) {
+  // Periods: 28th → 13th (crosses month), or 14th → 27th
+  if (day >= 14 && day <= 27) {
     return {
-      start: formatDateISO(new Date(year, month, 1)),
-      end: formatDateISO(new Date(year, month, 15)),
+      start: formatDateISO(new Date(year, month, 14)),
+      end: formatDateISO(new Date(year, month, 27)),
     }
   }
 
+  if (day >= 28) {
+    const nextMonth = month === 11 ? 0 : month + 1
+    const nextYear = month === 11 ? year + 1 : year
+    return {
+      start: formatDateISO(new Date(year, month, 28)),
+      end: formatDateISO(new Date(nextYear, nextMonth, 13)),
+    }
+  }
+
+  // day 1–13: previous month's 28th through this month's 13th
+  const prevMonth = month === 0 ? 11 : month - 1
+  const prevYear = month === 0 ? year - 1 : year
   return {
-    start: formatDateISO(new Date(year, month, 16)),
-    end: formatDateISO(new Date(year, month, lastDayOfMonth(year, month))),
+    start: formatDateISO(new Date(prevYear, prevMonth, 28)),
+    end: formatDateISO(new Date(year, month, 13)),
   }
 }
 
