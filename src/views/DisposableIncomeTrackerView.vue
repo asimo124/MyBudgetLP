@@ -1009,13 +1009,24 @@ onBeforeUnmount(() => {
                   <option value="includes">Includes</option>
                   <option value="excludes">Excludes</option>
                 </select>
-                <input
-                  v-model="trackerKeyword1"
-                  type="text"
-                  placeholder="Keyword…"
-                  class="form-input min-w-0 flex-1"
-                  @keydown.enter.prevent="applyTrackerFilters"
-                />
+                <div class="relative min-w-0 flex-1">
+                  <input
+                    v-model="trackerKeyword1"
+                    type="text"
+                    placeholder="Keyword…"
+                    class="form-input w-full pr-9"
+                    @keydown.enter.prevent="applyTrackerFilters"
+                  />
+                  <button
+                    v-if="trackerKeyword1"
+                    type="button"
+                    class="absolute inset-y-0 right-0 px-3 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                    aria-label="Clear keyword 1"
+                    @click="trackerKeyword1 = ''"
+                  >
+                    ×
+                  </button>
+                </div>
                 <select v-model="trackerKeyword1Match" class="form-input w-36">
                   <option value="contains">Contains</option>
                   <option value="starts_with">Starts with</option>
@@ -1031,13 +1042,24 @@ onBeforeUnmount(() => {
                   <option value="includes">Includes</option>
                   <option value="excludes">Excludes</option>
                 </select>
-                <input
-                  v-model="trackerKeyword2"
-                  type="text"
-                  placeholder="Keyword…"
-                  class="form-input min-w-0 flex-1"
-                  @keydown.enter.prevent="applyTrackerFilters"
-                />
+                <div class="relative min-w-0 flex-1">
+                  <input
+                    v-model="trackerKeyword2"
+                    type="text"
+                    placeholder="Keyword…"
+                    class="form-input w-full pr-9"
+                    @keydown.enter.prevent="applyTrackerFilters"
+                  />
+                  <button
+                    v-if="trackerKeyword2"
+                    type="button"
+                    class="absolute inset-y-0 right-0 px-3 text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                    aria-label="Clear keyword 2"
+                    @click="trackerKeyword2 = ''"
+                  >
+                    ×
+                  </button>
+                </div>
                 <select v-model="trackerKeyword2Match" class="form-input w-36">
                   <option value="contains">Contains</option>
                   <option value="starts_with">Starts with</option>
