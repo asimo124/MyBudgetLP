@@ -32,6 +32,8 @@ const SEARCH_TYPES = [
 
 const TRACKER_START_PAYCHECK_DATE_KEY = 'disposableTrackerStartPaycheckDate'
 const TRACKER_END_PAYCHECK_DATE_KEY = 'disposableTrackerEndPaycheckDate'
+const CHART_START_PAYCHECK_DATE_KEY = 'disposableTrackerChartStartPaycheckDate'
+const CHART_END_PAYCHECK_DATE_KEY = 'disposableTrackerChartEndPaycheckDate'
 const TRACKER_SORT_BY_KEY = 'disposableTrackerSortBy'
 const TRACKER_SORT_DIR_KEY = 'disposableTrackerSortDir'
 
@@ -49,7 +51,6 @@ function readStoredTrackerSortDir() {
 }
 
 const paycheckDate = ref('')
-const transactionDate = ref(null)
 const trackerStartPaycheckDate = ref('')
 const trackerEndPaycheckDate = ref('')
 const trackerTransactionTypes = ref([])
@@ -77,10 +78,14 @@ const savedSearchSaving = ref(false)
 const savedSearchBusy = ref(false)
 const startPaycheckDateOptions = ref([])
 const endPaycheckDateOptions = ref([])
-const categoryName = ref(null)
-const drilldownLevel = ref('root')
-const chartLabel = ref('Dates')
-const cumulative = ref(false)
+const impulseChartLevel = ref('root')
+const impulseChartLabel = ref('Impulse Buys')
+const impulseChartDates = ref([])
+const impulseDayTransactions = ref([])
+const impulseDayTransactionsAmountTotal = ref(0)
+const impulseDayDateDisplay = ref('')
+const chartStartPaycheckDate = ref('')
+const chartEndPaycheckDate = ref('')
 
 const transactions = ref([])
 const allTransactions = ref([])
@@ -207,6 +212,39 @@ function getDefaultTrackerPaycheckRange() {
   }
 }
 
+/** Wider default so recent impulse buys are visible (previous period start → current end). */
+function getDefaultChartPaycheckRange() {
+  const today = new Date()
+  const day = today.getDate()
+  const year = today.getFullYear()
+  const month = today.getMonth()
+
+  if (day >= 14 && day <= 27) {
+    const prevMonth = month === 0 ? 11 : month - 1
+    const prevYear = month === 0 ? year - 1 : year
+    return {
+      start: formatDateISO(new Date(prevYear, prevMonth, 28)),
+      end: formatDateISO(new Date(year, month, 27)),
+    }
+  }
+
+  if (day >= 28) {
+    const nextMonth = month === 11 ? 0 : month + 1
+    const nextYear = month === 11 ? year + 1 : year
+    return {
+      start: formatDateISO(new Date(year, month, 14)),
+      end: formatDateISO(new Date(nextYear, nextMonth, 13)),
+    }
+  }
+
+  const prevMonth = month === 0 ? 11 : month - 1
+  const prevYear = month === 0 ? year - 1 : year
+  return {
+    start: formatDateISO(new Date(prevYear, prevMonth, 14)),
+    end: formatDateISO(new Date(year, month, 13)),
+  }
+}
+
 function initTrackerPaycheckDates() {
   const range = getDefaultTrackerPaycheckRange()
   const savedStart = localStorage.getItem(TRACKER_START_PAYCHECK_DATE_KEY)
@@ -217,6 +255,17 @@ function initTrackerPaycheckDates() {
   trackerStartPaycheckDate.value = startValid ? savedStart : range.start
   trackerEndPaycheckDate.value = endValid ? savedEnd : range.end
   paycheckDate.value = trackerEndPaycheckDate.value
+}
+
+function initChartPaycheckDates() {
+  const range = getDefaultChartPaycheckRange()
+  const savedStart = localStorage.getItem(CHART_START_PAYCHECK_DATE_KEY)
+  const savedEnd = localStorage.getItem(CHART_END_PAYCHECK_DATE_KEY)
+  const startValid = savedStart && startPaycheckDateOptions.value.some((option) => option.value === savedStart)
+  const endValid = savedEnd && endPaycheckDateOptions.value.some((option) => option.value === savedEnd)
+
+  chartStartPaycheckDate.value = startValid ? savedStart : range.start
+  chartEndPaycheckDate.value = endValid ? savedEnd : range.end
 }
 
 function syncChartPaycheckDate() {
@@ -272,6 +321,18 @@ watch(trackerStartPaycheckDate, (value) => {
 watch(trackerEndPaycheckDate, (value) => {
   if (value) {
     localStorage.setItem(TRACKER_END_PAYCHECK_DATE_KEY, value)
+  }
+})
+
+watch(chartStartPaycheckDate, (value) => {
+  if (value) {
+    localStorage.setItem(CHART_START_PAYCHECK_DATE_KEY, value)
+  }
+})
+
+watch(chartEndPaycheckDate, (value) => {
+  if (value) {
+    localStorage.setItem(CHART_END_PAYCHECK_DATE_KEY, value)
   }
 })
 
@@ -335,7 +396,35 @@ async function applyTrackerFilters() {
   syncChartPaycheckDate()
   loading.value = true
   try {
-    await Promise.all([loadTransactions(), loadChartData()])
+    await loadTransactions()
+  } finally {
+    loading.value = false
+  }
+}
+
+async function applyChartFilters() {
+  if (
+    chartStartPaycheckDate.value &&
+    chartEndPaycheckDate.value &&
+    chartStartPaycheckDate.value > chartEndPaycheckDate.value
+  ) {
+    mainError.value = 'Chart start paycheck date must be on or before end paycheck date.'
+    return
+  }
+
+  mainError.value = ''
+  impulseChartLevel.value = 'root'
+  impulseDayTransactions.value = []
+  impulseDayTransactionsAmountTotal.value = 0
+  impulseDayDateDisplay.value = ''
+  impulseChartLabel.value = 'Impulse Buys'
+  loading.value = true
+  try {
+    await nextTick()
+    if (chartInstance) {
+      chartInstance.resize()
+    }
+    await loadChartData()
   } finally {
     loading.value = false
   }
@@ -686,85 +775,82 @@ async function loadAllTransactions() {
   }
 }
 
-async function drilldownIntoChart(dimension) {
-  if (drilldownLevel.value === 'root') {
-    const dayOfMonth = parseInt(dimension.split(', ')[1], 10)
-    const yearMonth = paycheckDate.value.slice(0, 7)
-    transactionDate.value = `${yearMonth}-${String(dayOfMonth).padStart(2, '0')}`
-    drilldownLevel.value = 'day'
-    await loadChartData()
-  } else if (drilldownLevel.value === 'day') {
-    categoryName.value = dimension
-    drilldownLevel.value = 'category'
-    await loadChartData()
+async function drilldownIntoImpulseChart(dateIso) {
+  impulseChartLevel.value = 'day'
+  impulseChartLabel.value = 'Impulse Buys'
+  impulseDayDateDisplay.value = ''
+  try {
+    const { data } = await api.get('/api/loadDisposableTransactionsChartDataDay.php', {
+      params: {
+        start_paycheck_date: chartStartPaycheckDate.value,
+        end_paycheck_date: chartEndPaycheckDate.value,
+        transaction_date: dateIso,
+      },
+    })
+    impulseDayTransactions.value = data?.items || []
+    impulseDayTransactionsAmountTotal.value =
+      data?.amount_total != null ? Number(data.amount_total) : 0
+    impulseDayDateDisplay.value = data?.transaction_date_display || dateIso
+    impulseChartLabel.value = `Impulse Buys — ${impulseDayDateDisplay.value}`
+  } catch {
+    impulseDayTransactions.value = []
+    impulseDayTransactionsAmountTotal.value = 0
   }
 }
 
-async function reverseDrilldownChart() {
-  if (drilldownLevel.value === 'category') {
-    drilldownLevel.value = 'day'
-    categoryName.value = null
-    await loadChartData()
-  } else if (drilldownLevel.value === 'day') {
-    drilldownLevel.value = 'root'
-    transactionDate.value = null
-    await loadChartData()
+async function reverseImpulseChartDrilldown() {
+  impulseChartLevel.value = 'root'
+  impulseDayTransactions.value = []
+  impulseDayTransactionsAmountTotal.value = 0
+  impulseDayDateDisplay.value = ''
+  impulseChartLabel.value = 'Impulse Buys'
+  await nextTick()
+  if (chartInstance) {
+    chartInstance.resize()
   }
+  await loadChartData()
 }
 
 async function loadChartData() {
-  const cumulativeParam = cumulative.value ? 1 : 0
+  if (impulseChartLevel.value !== 'root') {
+    return
+  }
 
-  if (drilldownLevel.value === 'root') {
-    chartLabel.value = 'Dates'
-    try {
-      const { data } = await api.get('/api/loadDisposableTransactionsChartData.php', {
-        params: { paycheck_date: paycheckDate.value, cumulative: cumulativeParam },
-      })
-      if (data && chartInstance) {
-        chartInstance.updateOptions(data.chartOptions)
-        chartInstance.updateSeries(data.series)
-        chartInstance.updateOptions({
-          yaxis: { min: 0, max: data.maxY || undefined },
-        })
-      }
-    } catch {
-      /* ignore */
+  impulseChartLabel.value = 'Impulse Buys'
+  try {
+    const { data } = await api.get('/api/loadDisposableTransactionsChartData.php', {
+      params: {
+        start_paycheck_date: chartStartPaycheckDate.value,
+        end_paycheck_date: chartEndPaycheckDate.value,
+      },
+    })
+    const categories = data?.categories || []
+    const series = data?.series || [{ name: 'Amount', data: [] }]
+    impulseChartDates.value = data?.dates || []
+
+    if (!chartInstance) {
+      return
     }
-  } else if (drilldownLevel.value === 'day') {
-    chartLabel.value = 'Categories'
-    try {
-      const { data } = await api.get('/api/loadDisposableTransactionsChartDataDay.php', {
-        params: {
-          paycheck_date: paycheckDate.value,
-          transaction_date: transactionDate.value,
-          cumulative: cumulativeParam,
+
+    await chartInstance.updateOptions(
+      {
+        xaxis: { categories },
+        series,
+      },
+      true,
+      true
+    )
+  } catch {
+    impulseChartDates.value = []
+    if (chartInstance) {
+      await chartInstance.updateOptions(
+        {
+          xaxis: { categories: [] },
+          series: [{ name: 'Amount', data: [] }],
         },
-      })
-      if (data && chartInstance) {
-        chartInstance.updateOptions(data.chartOptions)
-        chartInstance.updateSeries(data.series)
-      }
-    } catch {
-      /* ignore */
-    }
-  } else if (drilldownLevel.value === 'category') {
-    chartLabel.value = 'Transactions'
-    try {
-      const { data } = await api.get('/api/loadDisposableTransactionsChartDataCategory.php', {
-        params: {
-          paycheck_date: paycheckDate.value,
-          transaction_date: transactionDate.value,
-          category_name: categoryName.value,
-          cumulative: cumulativeParam,
-        },
-      })
-      if (data && chartInstance) {
-        chartInstance.updateOptions(data.chartOptions)
-        chartInstance.updateSeries(data.series)
-      }
-    } catch {
-      /* ignore */
+        true,
+        true
+      )
     }
   }
 }
@@ -853,31 +939,58 @@ async function submitPreviewUpload() {
   }
 }
 
-function initChart() {
+async function initChart() {
   if (!chartRef.value) return
+  if (chartInstance) {
+    chartInstance.destroy()
+    chartInstance = null
+  }
   chartInstance = new ApexCharts(chartRef.value, {
     chart: {
       type: 'bar',
+      toolbar: { show: false },
       events: {
         dataPointSelection(_event, _chartContext, config) {
-          const categories = config.w.config.xaxis.categories || []
-          const clicked = categories[config.dataPointIndex]
-          if (clicked) {
-            drilldownIntoChart(clicked)
+          const dateIso = impulseChartDates.value[config.dataPointIndex]
+          if (dateIso) {
+            drilldownIntoImpulseChart(dateIso)
           }
         },
       },
     },
-    xaxis: { categories: [] },
-    series: [{ name: 'Spent', data: [] }],
+    plotOptions: {
+      bar: {
+        columnWidth: '55%',
+      },
+    },
+    dataLabels: { enabled: false },
+    xaxis: {
+      categories: [],
+      labels: {
+        rotate: -45,
+        rotateAlways: true,
+      },
+    },
+    yaxis: {
+      labels: {
+        formatter: (value) => `$${Number(value).toFixed(0)}`,
+      },
+    },
+    tooltip: {
+      y: {
+        formatter: (value) => `$${Number(value).toFixed(2)}`,
+      },
+    },
+    series: [{ name: 'Amount', data: [] }],
   })
-  chartInstance.render()
+  await chartInstance.render()
 }
 
 onMounted(async () => {
   initDefaultDateRange()
   generatePaycheckDateOptions()
   initTrackerPaycheckDates()
+  initChartPaycheckDates()
   loading.value = true
   try {
     await loadData()
@@ -888,7 +1001,7 @@ onMounted(async () => {
     loading.value = false
   }
   await nextTick()
-  initChart()
+  await initChart()
   await loadChartData()
 })
 
@@ -1178,25 +1291,90 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="card">
-        <div class="card-body">
-          <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ chartLabel }}</h3>
-            <div class="flex items-center gap-4">
-              <label class="flex items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
-                <input v-model="cumulative" type="checkbox" class="rounded" @change="loadChartData" />
-                Cumulative
-              </label>
+        <div class="card-body space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ impulseChartLabel }}</h3>
+            <button
+              v-if="impulseChartLevel !== 'root'"
+              type="button"
+              class="btn bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200"
+              @click="reverseImpulseChartDrilldown"
+            >
+              Back
+            </button>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <div>
+              <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Start paycheck date</label>
+              <select v-model="chartStartPaycheckDate" class="form-input w-full">
+                <option
+                  v-for="option in startPaycheckDateOptions"
+                  :key="'chart-start-' + option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+            <div>
+              <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">End paycheck date</label>
+              <select v-model="chartEndPaycheckDate" class="form-input w-full">
+                <option
+                  v-for="option in endPaycheckDateOptions"
+                  :key="'chart-end-' + option.value"
+                  :value="option.value"
+                >
+                  {{ option.label }}
+                </option>
+              </select>
+            </div>
+            <div class="flex items-end">
               <button
-                v-if="chartLabel !== 'Dates'"
                 type="button"
-                class="btn bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200"
-                @click="reverseDrilldownChart"
+                class="btn bg-primary-500 text-white hover:bg-primary-600"
+                @click="applyChartFilters"
               >
-                Back
+                Apply chart filters
               </button>
             </div>
           </div>
-          <div ref="chartRef" class="h-[350px] w-full"></div>
+
+          <div v-show="impulseChartLevel === 'root'" ref="chartRef" class="h-[350px] w-full"></div>
+          <div v-if="impulseChartLevel === 'day'">
+            <div class="overflow-x-auto overflow-y-auto max-h-[450px]">
+              <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead class="bg-gray-50 dark:bg-gray-800">
+                  <tr>
+                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Name</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Category</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 w-24">Amount</th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                  <tr v-if="!impulseDayTransactions.length">
+                    <td colspan="3" class="px-3 py-6 text-center text-sm italic text-gray-500">
+                      No impulse buys for this day
+                    </td>
+                  </tr>
+                  <tr
+                    v-for="item in impulseDayTransactions"
+                    :key="item.id"
+                    class="hover:bg-gray-50 dark:hover:bg-gray-800/50"
+                  >
+                    <td class="px-3 py-2 text-sm break-words">{{ item.name }}</td>
+                    <td class="px-3 py-2 text-sm break-words">{{ item.category_name }}</td>
+                    <td class="px-3 py-2 text-sm">${{ item.amount }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="mt-3 flex justify-end border-t border-gray-200 pt-3 dark:border-gray-700">
+              <span class="text-sm font-semibold">
+                Total: ${{ Number(impulseDayTransactionsAmountTotal).toFixed(2) }}
+              </span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
