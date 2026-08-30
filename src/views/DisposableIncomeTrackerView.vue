@@ -508,8 +508,8 @@ async function deleteSavedSearch(id) {
   }
 }
 
-async function revertAllToDisposable() {
-  if (!confirm('Set every transaction to disposable?')) return
+async function revertAllToBlank() {
+  if (!confirm('Set every transaction type to blank (null)?')) return
 
   savedSearchBusy.value = true
   mainMsg.value = ''
@@ -517,7 +517,7 @@ async function revertAllToDisposable() {
   try {
     const { data } = await api.post('/api/revertDisposableTransactions.php')
     if (data?.success) {
-      mainMsg.value = `Reverted ${data.updated} transaction(s) to disposable.`
+      mainMsg.value = `Reverted ${data.updated} transaction(s) to blank.`
       await loadTransactions()
     } else {
       mainError.value = data?.error || 'Revert failed.'
@@ -1520,9 +1520,9 @@ onBeforeUnmount(() => {
                 type="button"
                 class="btn bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200"
                 :disabled="savedSearchBusy"
-                @click="revertAllToDisposable"
+                @click="revertAllToBlank"
               >
-                Revert All to Disposable
+                Revert All to Blank
               </button>
               <button
                 type="button"
