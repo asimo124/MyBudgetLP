@@ -47,7 +47,7 @@ const paycheckDate = ref('')
 const transactionDate = ref(null)
 const trackerStartPaycheckDate = ref('')
 const trackerEndPaycheckDate = ref('')
-const trackerTransactionTypes = ref(['disposable'])
+const trackerTransactionTypes = ref([])
 const trackerKeyword1Mode = ref('includes')
 const trackerKeyword1Match = ref('contains')
 const trackerKeyword1 = ref('')
@@ -317,11 +317,6 @@ async function loadTransactions() {
 }
 
 async function applyTrackerFilters() {
-  if (!trackerTransactionTypes.value.length) {
-    mainError.value = 'Select at least one transaction type.'
-    return
-  }
-
   if (
     trackerStartPaycheckDate.value &&
     trackerEndPaycheckDate.value &&
@@ -354,11 +349,11 @@ function mapKeywordMatchToSearchType(match) {
   }
 }
 
-function shouldPromptSaveCoveredSearch() {
+function shouldPromptSaveSearch() {
   return (
     trackerKeyword1.value.trim() !== '' &&
     trackerAllSelected.value &&
-    trackerBulkTransactionType.value === 'covered'
+    (trackerBulkTransactionType.value === 'covered' || trackerBulkTransactionType.value === 'disposable')
   )
 }
 
@@ -368,7 +363,7 @@ async function markSelectedTransactionType() {
     return
   }
 
-  if (shouldPromptSaveCoveredSearch()) {
+  if (shouldPromptSaveSearch()) {
     showSaveSearchModal.value = true
     return
   }
@@ -384,7 +379,7 @@ async function confirmSaveSearchAndMark() {
     const { data } = await api.post('/api/createDisposableSavedSearch.php', {
       keyword: trackerKeyword1.value.trim(),
       search_type: mapKeywordMatchToSearchType(trackerKeyword1Match.value),
-      transaction_type: 'covered',
+      transaction_type: trackerBulkTransactionType.value,
     })
     if (!data?.success) {
       mainError.value = data?.error || 'Failed to save search.'
@@ -1637,7 +1632,7 @@ onBeforeUnmount(() => {
     >
       <div class="w-full max-w-md rounded-lg bg-white p-6 shadow-lg dark:bg-gray-800">
         <p class="text-sm text-gray-800 dark:text-gray-200">
-          Do you want to save this search for covered?
+          Do you want to save this search for {{ trackerBulkTransactionType }}?
         </p>
         <div class="mt-5 flex justify-end gap-2">
           <button
