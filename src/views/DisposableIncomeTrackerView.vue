@@ -18,6 +18,13 @@ const TRANSACTION_TYPES = [
   { value: 'impulse buy', label: 'Impulse buy' },
 ]
 
+const SEARCH_TYPES = [
+  { value: 'contains', label: 'Contains' },
+  { value: 'starts with', label: 'Starts with' },
+  { value: 'ends with', label: 'Ends with' },
+  { value: 'regex', label: 'Regex' },
+]
+
 const TRACKER_START_PAYCHECK_DATE_KEY = 'disposableTrackerStartPaycheckDate'
 const TRACKER_END_PAYCHECK_DATE_KEY = 'disposableTrackerEndPaycheckDate'
 const TRACKER_SORT_BY_KEY = 'disposableTrackerSortBy'
@@ -52,6 +59,17 @@ const trackerSortDir = ref(readStoredTrackerSortDir())
 const trackerSelectedIds = ref([])
 const trackerBulkTransactionType = ref('disposable')
 const trackerBulkUpdating = ref(false)
+const showSaveSearchModal = ref(false)
+const savingSearch = ref(false)
+const savedSearches = ref([])
+const savedSearchForm = ref({
+  id: null,
+  keyword: '',
+  search_type: 'contains',
+  transaction_type: 'covered',
+})
+const savedSearchSaving = ref(false)
+const savedSearchBusy = ref(false)
 const startPaycheckDateOptions = ref([])
 const endPaycheckDateOptions = ref([])
 const categoryName = ref(null)
@@ -314,12 +332,71 @@ async function applyTrackerFilters() {
   }
 }
 
+function mapKeywordMatchToSearchType(match) {
+  switch (match) {
+    case 'starts_with':
+      return 'starts with'
+    case 'ends_with':
+      return 'ends with'
+    case 'regex':
+      return 'regex'
+    default:
+      return 'contains'
+  }
+}
+
+function shouldPromptSaveCoveredSearch() {
+  return (
+    trackerKeyword1.value.trim() !== '' &&
+    trackerAllSelected.value &&
+    trackerBulkTransactionType.value === 'covered'
+  )
+}
+
 async function markSelectedTransactionType() {
   if (!trackerSelectedIds.value.length) {
     mainError.value = 'Select at least one transaction.'
     return
   }
 
+  if (shouldPromptSaveCoveredSearch()) {
+    showSaveSearchModal.value = true
+    return
+  }
+
+  await performBulkTransactionTypeUpdate()
+}
+
+async function confirmSaveSearchAndMark() {
+  savingSearch.value = true
+  mainMsg.value = ''
+  mainError.value = ''
+  try {
+    const { data } = await api.post('/api/createDisposableSavedSearch.php', {
+      keyword: trackerKeyword1.value.trim(),
+      search_type: mapKeywordMatchToSearchType(trackerKeyword1Match.value),
+      transaction_type: 'covered',
+    })
+    if (!data?.success) {
+      mainError.value = data?.error || 'Failed to save search.'
+      return
+    }
+    showSaveSearchModal.value = false
+    await performBulkTransactionTypeUpdate()
+    await loadSavedSearches()
+  } catch (err) {
+    mainError.value = err.response?.data?.error || err.response?.data?.message || 'Failed to save search.'
+  } finally {
+    savingSearch.value = false
+  }
+}
+
+async function skipSaveSearchAndMark() {
+  showSaveSearchModal.value = false
+  await performBulkTransactionTypeUpdate()
+}
+
+async function performBulkTransactionTypeUpdate() {
   trackerBulkUpdating.value = true
   mainMsg.value = ''
   mainError.value = ''
@@ -338,6 +415,134 @@ async function markSelectedTransactionType() {
     mainError.value = err.response?.data?.error || err.response?.data?.message || 'Update failed.'
   } finally {
     trackerBulkUpdating.value = false
+  }
+}
+
+async function loadSavedSearches() {
+  try {
+    const { data } = await api.get('/api/loadDisposableSavedSearches.php')
+    savedSearches.value = data?.items || []
+  } catch {
+    savedSearches.value = []
+  }
+}
+
+function resetSavedSearchForm() {
+  savedSearchForm.value = {
+    id: null,
+    keyword: '',
+    search_type: 'contains',
+    transaction_type: 'covered',
+  }
+}
+
+function editSavedSearch(item) {
+  savedSearchForm.value = {
+    id: item.id,
+    keyword: item.keyword,
+    search_type: item.search_type,
+    transaction_type: item.transaction_type,
+  }
+}
+
+async function saveSavedSearchForm() {
+  if (!savedSearchForm.value.keyword.trim()) {
+    mainError.value = 'Keyword is required.'
+    return
+  }
+
+  savedSearchSaving.value = true
+  mainMsg.value = ''
+  mainError.value = ''
+  try {
+    const payload = {
+      keyword: savedSearchForm.value.keyword.trim(),
+      search_type: savedSearchForm.value.search_type,
+      transaction_type: savedSearchForm.value.transaction_type,
+    }
+    let data
+    if (savedSearchForm.value.id) {
+      ;({ data } = await api.post('/api/updateDisposableSavedSearch.php', {
+        id: savedSearchForm.value.id,
+        ...payload,
+      }))
+    } else {
+      ;({ data } = await api.post('/api/createDisposableSavedSearch.php', payload))
+    }
+    if (data?.success) {
+      mainMsg.value = savedSearchForm.value.id ? 'Saved search updated.' : 'Saved search created.'
+      resetSavedSearchForm()
+      await loadSavedSearches()
+    } else {
+      mainError.value = data?.error || 'Failed to save.'
+    }
+  } catch (err) {
+    mainError.value = err.response?.data?.error || err.response?.data?.message || 'Failed to save.'
+  } finally {
+    savedSearchSaving.value = false
+  }
+}
+
+async function deleteSavedSearch(id) {
+  if (!confirm('Delete this saved search?')) return
+
+  mainMsg.value = ''
+  mainError.value = ''
+  try {
+    const { data } = await api.post('/api/deleteDisposableSavedSearch.php', { id })
+    if (data?.success) {
+      mainMsg.value = 'Saved search deleted.'
+      if (savedSearchForm.value.id === id) {
+        resetSavedSearchForm()
+      }
+      await loadSavedSearches()
+    } else {
+      mainError.value = data?.error || 'Delete failed.'
+    }
+  } catch (err) {
+    mainError.value = err.response?.data?.error || err.response?.data?.message || 'Delete failed.'
+  }
+}
+
+async function revertAllToDisposable() {
+  if (!confirm('Set every transaction to disposable?')) return
+
+  savedSearchBusy.value = true
+  mainMsg.value = ''
+  mainError.value = ''
+  try {
+    const { data } = await api.post('/api/revertDisposableTransactions.php')
+    if (data?.success) {
+      mainMsg.value = `Reverted ${data.updated} transaction(s) to disposable.`
+      await loadTransactions()
+    } else {
+      mainError.value = data?.error || 'Revert failed.'
+    }
+  } catch (err) {
+    mainError.value = err.response?.data?.error || err.response?.data?.message || 'Revert failed.'
+  } finally {
+    savedSearchBusy.value = false
+  }
+}
+
+async function reRunSavedSearches() {
+  if (!confirm('Re-run all saved searches against every transaction?')) return
+
+  savedSearchBusy.value = true
+  mainMsg.value = ''
+  mainError.value = ''
+  try {
+    const { data } = await api.post('/api/reRunDisposableSavedSearches.php')
+    if (data?.success) {
+      mainMsg.value = `Applied ${data.searches_applied} saved search(es); updated ${data.updated} transaction(s).`
+      await loadTransactions()
+    } else {
+      mainError.value = data?.error || 'Re-run failed.'
+    }
+  } catch (err) {
+    mainError.value = err.response?.data?.error || err.response?.data?.message || 'Re-run failed.'
+  } finally {
+    savedSearchBusy.value = false
   }
 }
 
@@ -596,8 +801,12 @@ async function submitImportUpload() {
       headers: { 'Content-Type': 'multipart/form-data' },
     })
     mainMsg.value = data.message || 'File uploaded successfully.'
+    if (data.saved_searches_applied != null) {
+      mainMsg.value += ` Applied ${data.saved_searches_applied} saved search(es) (${data.saved_searches_updated || 0} updated).`
+    }
     uploadImportFile.value = null
     await loadData()
+    await loadSavedSearches()
   } catch (err) {
     mainError.value = err.response?.data?.message || 'Upload failed.'
   } finally {
@@ -665,6 +874,7 @@ onMounted(async () => {
     await loadData()
     await loadDisposableFilterOptions()
     await loadAllTransactions()
+    await loadSavedSearches()
   } finally {
     loading.value = false
   }
@@ -710,6 +920,7 @@ onBeforeUnmount(() => {
             { id: 'tracker', label: 'Tracker' },
             { id: 'upload', label: 'Upload' },
             { id: 'transactions', label: 'Transactions' },
+            { id: 'saved-searches', label: 'Saved Searches' },
           ]"
           :key="tab.id"
           type="button"
@@ -1268,6 +1479,152 @@ onBeforeUnmount(() => {
               Total: ${{ Number(allTransactionsAmountTotal).toFixed(2) }}
             </span>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Saved Searches tab -->
+    <div v-show="activeTab === 'saved-searches'" class="space-y-6">
+      <div class="card">
+        <div class="card-body space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Saved Searches</h2>
+            <div class="flex flex-wrap gap-2">
+              <button
+                type="button"
+                class="btn bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200"
+                :disabled="savedSearchBusy"
+                @click="revertAllToDisposable"
+              >
+                Revert All to Disposable
+              </button>
+              <button
+                type="button"
+                class="btn bg-primary-500 text-white hover:bg-primary-600"
+                :disabled="savedSearchBusy"
+                @click="reRunSavedSearches"
+              >
+                Re-Run Saved Searches
+              </button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div>
+              <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Keyword</label>
+              <input v-model="savedSearchForm.keyword" type="text" class="form-input w-full" />
+            </div>
+            <div>
+              <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Search type</label>
+              <select v-model="savedSearchForm.search_type" class="form-input w-full">
+                <option v-for="type in SEARCH_TYPES" :key="type.value" :value="type.value">
+                  {{ type.label }}
+                </option>
+              </select>
+            </div>
+            <div>
+              <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Transaction type</label>
+              <select v-model="savedSearchForm.transaction_type" class="form-input w-full">
+                <option v-for="type in TRANSACTION_TYPES" :key="'ss-' + type.value" :value="type.value">
+                  {{ type.label }}
+                </option>
+              </select>
+            </div>
+            <div class="flex items-end gap-2">
+              <button
+                type="button"
+                class="btn bg-primary-500 text-white hover:bg-primary-600"
+                :disabled="savedSearchSaving"
+                @click="saveSavedSearchForm"
+              >
+                {{ savedSearchSaving ? 'Saving…' : savedSearchForm.id ? 'Update' : 'Create' }}
+              </button>
+              <button
+                v-if="savedSearchForm.id"
+                type="button"
+                class="btn bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200"
+                @click="resetSavedSearchForm"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-body">
+          <div class="overflow-x-auto overflow-y-auto max-h-[450px]">
+            <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+              <thead class="bg-gray-50 dark:bg-gray-800">
+                <tr>
+                  <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Keyword</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Search type</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Transaction type</th>
+                  <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500 w-40">Actions</th>
+                </tr>
+              </thead>
+              <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                <tr v-if="!savedSearches.length">
+                  <td colspan="4" class="px-3 py-6 text-center text-sm italic text-gray-500">
+                    No saved searches yet
+                  </td>
+                </tr>
+                <tr v-for="item in savedSearches" :key="item.id" class="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                  <td class="px-3 py-2 text-sm break-words">{{ item.keyword }}</td>
+                  <td class="px-3 py-2 text-sm">{{ item.search_type }}</td>
+                  <td class="px-3 py-2 text-sm">{{ item.transaction_type }}</td>
+                  <td class="px-3 py-2 text-sm">
+                    <div class="flex gap-2">
+                      <button
+                        type="button"
+                        class="text-primary-600 hover:underline dark:text-primary-400"
+                        @click="editSavedSearch(item)"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        class="text-red-600 hover:underline dark:text-red-400"
+                        @click="deleteSavedSearch(item.id)"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="showSaveSearchModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+    >
+      <div class="w-full max-w-md rounded-lg bg-white p-6 shadow-lg dark:bg-gray-800">
+        <p class="text-sm text-gray-800 dark:text-gray-200">
+          Do you want to save this search for covered?
+        </p>
+        <div class="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            class="btn bg-gray-200 text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200"
+            :disabled="savingSearch"
+            @click="skipSaveSearchAndMark"
+          >
+            No
+          </button>
+          <button
+            type="button"
+            class="btn bg-primary-500 text-white hover:bg-primary-600"
+            :disabled="savingSearch"
+            @click="confirmSaveSearchAndMark"
+          >
+            {{ savingSearch ? 'Saving…' : 'Yes' }}
+          </button>
         </div>
       </div>
     </div>
