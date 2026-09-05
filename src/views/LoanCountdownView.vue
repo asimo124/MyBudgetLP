@@ -17,7 +17,9 @@ import {
   loadSavedFormInto,
   loanFilled,
   loanSlotHasData,
+  minPaymentFreedMonthly,
   parseStartYm,
+  paycheckDisposableWithSnowball,
   roundMoney,
   startOfLocalDay,
   startingMonthOptions,
@@ -46,10 +48,29 @@ const loan5BalanceAfterLoan4Spill = ref(null)
 const loanFieldDefs = [
   { key: 'name', label: 'Name', type: 'text' },
   { key: 'remaining_balance', label: 'Remaining balance', type: 'number', step: '0.01', min: '0' },
-  { key: 'adjust_disposable_per_paycheck1', label: 'Adjust disposable (1st paycheck)', type: 'number', step: 'any' },
-  { key: 'adjust_disposable_per_paycheck15', label: 'Adjust disposable (15th paycheck)', type: 'number', step: 'any' },
+  {
+    key: 'adjust_disposable_per_paycheck1',
+    label: 'Adjust disposable (1st paycheck)',
+    type: 'number',
+    step: 'any',
+    hint: 'Extra income (or a negative amount for income you lose) while this loan is being paid off.',
+  },
+  {
+    key: 'adjust_disposable_per_paycheck15',
+    label: 'Adjust disposable (15th paycheck)',
+    type: 'number',
+    step: 'any',
+    hint: 'Extra income (or a negative amount for income you lose) while this loan is being paid off.',
+  },
   { key: 'min_to_principal', label: 'Min to principal', type: 'number', step: '0.01', min: '0' },
-  { key: 'minimum_payment_percent', label: 'Minimum Payment Percent', type: 'number', step: 'any', min: '0' },
+  {
+    key: 'minimum_payment_percent',
+    label: 'Minimum Payment Percent',
+    type: 'number',
+    step: 'any',
+    min: '0',
+    hint: 'Percent of extra principal paid each paycheck is added to monthly disposable, then split across the 1st and 15th.',
+  },
   { key: 'day_of_month', label: 'Day of month', type: 'number', step: '1', min: '1', max: '31' },
 ]
 
@@ -281,6 +302,7 @@ function calculateLoanCountdown() {
   }
 
   let lastMinExclusive = addDays(todayStart, -1)
+  let extraMonthly = 0
 
   const getAdjustAdd = (loanN, isFirst) => {
     const a1 = Number(form[`loan${loanN}_adjust_disposable_per_paycheck1`])
@@ -288,6 +310,12 @@ function calculateLoanCountdown() {
     const v1 = Number.isFinite(a1) ? a1 : 0
     const v15 = Number.isFinite(a15) ? a15 : 0
     return isFirst ? v1 : v15
+  }
+
+  const addFreedMonthly = (loanN, principalPaid) => {
+    extraMonthly = roundMoney(
+      extraMonthly + minPaymentFreedMonthly(principalPaid, form[`loan${loanN}_minimum_payment_percent`])
+    )
   }
 
   const result = {
@@ -324,7 +352,7 @@ function calculateLoanCountdown() {
     const isFirst = pcDate.getDate() === 1
     const basePool = isFirst ? base1 : base15
     const adjAdd = getAdjustAdd(activeN, isFirst)
-    let pool = roundMoney(basePool + adjAdd)
+    let pool = roundMoney(paycheckDisposableWithSnowball(basePool, extraMonthly) + adjAdd)
 
     // "Already spent" is relative to the next upcoming paychecks before push.
     // With push on, the first paycheck is skipped, so the 2nd-spent amount
@@ -358,17 +386,19 @@ function calculateLoanCountdown() {
       form[`loan${activeN}_min_to_principal`]
     )
     bals[bi] = roundMoney(bals[bi] - applied)
+    addFreedMonthly(activeN, applied)
     schedules[bi].push({
       dateLabel,
       day,
       dateShort,
-      disposableApplied: applied,
+      disposableApplied: pool,
       runningTotal: bals[bi],
     })
 
     if (bals[bi] <= 0) {
       bals[bi] = 0
       const spill = roundMoney(pool - applied)
+      const balsBeforeSpill = bals.slice()
       if (activeN === 1) {
         loan1PayoffLeftover.value = spill
         const balances = [bals[1], bals[2], bals[3], bals[4]]
@@ -403,6 +433,10 @@ function calculateLoanCountdown() {
         bals[4] = balances[3]
       } else if (activeN === 5) {
         result.loan5PayoffLeftover = spill
+      }
+      for (let j = 0; j < 5; j++) {
+        const spilledOnto = roundMoney(balsBeforeSpill[j] - bals[j])
+        if (spilledOnto > 0) addFreedMonthly(j + 1, spilledOnto)
       }
     }
   }
@@ -638,6 +672,7 @@ async function runCalculateAndScroll() {
               class="form-input w-full"
               @blur="persistLoanForm"
             />
+            <p v-if="field.hint" class="mt-1 text-xs text-gray-500 dark:text-gray-400">{{ field.hint }}</p>
           </div>
         </div>
       </div>

@@ -130,6 +130,25 @@ export function applyMinPrincipalAccrualsInWindow(bals, loansCfg, lastExclusive,
   }
 }
 
+/** Monthly min-payment dollars freed when principal drops (percent of balance). */
+export function minPaymentFreedMonthly(principalPaid, minimumPaymentPercent) {
+  const paid = Number(principalPaid)
+  const pct = Number(minimumPaymentPercent)
+  if (!Number.isFinite(paid) || paid <= 0 || !Number.isFinite(pct) || pct <= 0) {
+    return 0
+  }
+  return roundMoney(paid * (pct / 100))
+}
+
+/** Split accumulated extra monthly disposable across the 1st and 15th paychecks. */
+export function paycheckDisposableWithSnowball(basePool, extraMonthly) {
+  const base = Number(basePool)
+  const extra = Number(extraMonthly)
+  const b = Number.isFinite(base) ? base : 0
+  const e = Number.isFinite(extra) ? extra : 0
+  return roundMoney(b + e / 2)
+}
+
 export function appliedPrincipalThisPaycheck(balance, pool, minPrincipal) {
   const b = roundMoney(balance)
   const p = roundMoney(pool)
