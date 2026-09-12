@@ -16,6 +16,7 @@ const API = {
   addOatmeal: '/api/dietlog/add_oatmeal.php',
   addBeef: '/api/dietlog/add_beef.php',
   addGluten: '/api/dietlog/add_gluten.php',
+  addYogurt: '/api/dietlog/add_yogurt.php',
   hemmerhoidLog: '/api/dietlog_hemmerhoid_log.php',
   hemmerhoidCreate: '/api/dietlog_hemmerhoid_create.php',
   hemmerhoidUpdate: '/api/dietlog_hemmerhoid_update.php',
@@ -627,6 +628,9 @@ onMounted(() => {
         </button>
         <button type="button" class="btn bg-red-500 text-white hover:bg-red-600" @click="addNamedFood(API.addGluten, 'Gluten added.')">
           Gluten
+        </button>
+        <button type="button" class="btn bg-red-500 text-white hover:bg-red-600" @click="addNamedFood(API.addYogurt, 'Yogurt added.')">
+          Yogurt
         </button>
       </div>
 
