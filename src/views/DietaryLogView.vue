@@ -14,11 +14,50 @@ const API = {
   entryDelete: '/api/dietlog_entry_delete.php',
   suggestedMeal: '/api/dietlog_suggested_meal.php',
   addOatmeal: '/api/dietlog/add_oatmeal.php',
+  addBeef: '/api/dietlog/add_beef.php',
+  addGluten: '/api/dietlog/add_gluten.php',
+  hemmerhoidLog: '/api/dietlog_hemmerhoid_log.php',
+  hemmerhoidCreate: '/api/dietlog_hemmerhoid_create.php',
+  hemmerhoidUpdate: '/api/dietlog_hemmerhoid_update.php',
+  hemmerhoidDelete: '/api/dietlog_hemmerhoid_delete.php',
+}
+
+function pad2(n) {
+  return String(n).padStart(2, '0')
 }
 
 function todayYmd() {
   const today = new Date()
-  return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`
+  return `${today.getFullYear()}-${pad2(today.getMonth() + 1)}-${pad2(today.getDate())}`
+}
+
+function nowDatetimeLocal() {
+  const d = new Date()
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+}
+
+function toMysqlDatetime(localValue) {
+  if (!localValue) return ''
+  const normalized = String(localValue).replace('T', ' ')
+  return normalized.length === 16 ? `${normalized}:00` : normalized
+}
+
+function fromMysqlDatetime(value) {
+  if (!value) return ''
+  return String(value).slice(0, 16).replace(' ', 'T')
+}
+
+function formatPoopedAt(value) {
+  if (!value) return ''
+  const d = new Date(String(value).replace(' ', 'T'))
+  if (Number.isNaN(d.getTime())) return String(value)
+  return d.toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 }
 
 const activeTab = ref('log')
@@ -32,12 +71,15 @@ const macros = ref([])
 const types = ref([])
 const units_of_measure = ref([])
 const meals_of_day = ref([])
+const hemmerhoidLogs = ref([])
 
 const showFoodModal = ref(false)
 const showLogModal = ref(false)
+const showHemmerhoidModal = ref(false)
 const showConfirmModal = ref(false)
 const editingFoodId = ref(null)
 const editingLogId = ref(null)
+const editingHemmerhoidId = ref(null)
 const confirmDeleteType = ref(null)
 const pendingDeleteId = ref(null)
 const pendingBulkLogIds = ref(null)
@@ -60,6 +102,12 @@ const newLog = reactive({
   amount: 0,
   date_consumed: todayYmd(),
   meal_of_day_id: '',
+})
+
+const newHemmerhoid = reactive({
+  date_pooped: nowDatetimeLocal(),
+  pain_level: 1,
+  blood_level: 1,
 })
 
 const sortedLogDates = computed(() => Object.keys(logByDate.value).sort().reverse())
@@ -85,6 +133,9 @@ const confirmMessage = computed(() => {
   if (confirmDeleteType.value === 'food') {
     return 'Are you sure you want to delete this food? This cannot be undone.'
   }
+  if (confirmDeleteType.value === 'hemmerhoid') {
+    return 'Are you sure you want to delete this hemmerhoid log entry? This cannot be undone.'
+  }
   return ''
 })
 
@@ -92,6 +143,8 @@ const foodModalTitle = computed(() => (editingFoodId.value ? 'Edit Food' : 'Crea
 const foodModalSaveLabel = computed(() => (editingFoodId.value ? 'Save' : 'Create'))
 const logModalTitle = computed(() => (editingLogId.value ? 'Edit Log Entry' : 'Log Food Consumed'))
 const logModalSaveLabel = computed(() => (editingLogId.value ? 'Save' : 'Create'))
+const hemmerhoidModalTitle = computed(() => (editingHemmerhoidId.value ? 'Edit Hemmerhoid Log' : 'Add Hemmerhoid Log'))
+const hemmerhoidModalSaveLabel = computed(() => (editingHemmerhoidId.value ? 'Save' : 'Create'))
 
 function formatLogHeading(dateStr) {
   const d = new Date(`${dateStr}T12:00:00`)
@@ -145,13 +198,15 @@ async function bootstrapData() {
   loading.value = true
   loadError.value = false
   try {
-    const [foodsRes, logRes, lookRes] = await Promise.all([
+    const [foodsRes, logRes, lookRes, hemmRes] = await Promise.all([
       api.get(API.foods),
       api.get(API.log),
       api.get(API.lookups),
+      api.get(API.hemmerhoidLog).catch(() => ({ data: { items: [] } })),
     ])
     foods.value = foodsRes.data?.foods || []
     mapLogResponse(logRes.data)
+    hemmerhoidLogs.value = hemmRes.data?.items || []
     pruneSelectedLogIds()
     if (lookRes.data) {
       macros.value = lookRes.data.macros || []
@@ -304,6 +359,74 @@ async function addOatmeal(withBlueberries = false) {
   }
 }
 
+async function addNamedFood(endpoint, fallbackMessage) {
+  mainMsg.value = ''
+  try {
+    const { data } = await api.post(endpoint)
+    mainMsg.value = data.message || fallbackMessage
+    await bootstrapData()
+  } catch {
+    /* ignore */
+  }
+}
+
+function resetHemmerhoidForm() {
+  Object.assign(newHemmerhoid, {
+    date_pooped: nowDatetimeLocal(),
+    pain_level: 1,
+    blood_level: 1,
+  })
+}
+
+function openCreateHemmerhoidModal() {
+  editingHemmerhoidId.value = null
+  resetHemmerhoidForm()
+  showHemmerhoidModal.value = true
+}
+
+function openEditHemmerhoid(row) {
+  editingHemmerhoidId.value = row.id
+  Object.assign(newHemmerhoid, {
+    date_pooped: fromMysqlDatetime(row.date_pooped),
+    pain_level: parseInt(row.pain_level, 10) || 1,
+    blood_level: parseInt(row.blood_level, 10) || 1,
+  })
+  showHemmerhoidModal.value = true
+}
+
+function closeHemmerhoidModal() {
+  showHemmerhoidModal.value = false
+  editingHemmerhoidId.value = null
+  resetHemmerhoidForm()
+}
+
+async function saveHemmerhoid() {
+  try {
+    const payload = {
+      date_pooped: toMysqlDatetime(newHemmerhoid.date_pooped),
+      pain_level: newHemmerhoid.pain_level,
+      blood_level: newHemmerhoid.blood_level,
+    }
+    if (editingHemmerhoidId.value) {
+      payload.id = editingHemmerhoidId.value
+      await api.post(API.hemmerhoidUpdate, payload)
+    } else {
+      await api.post(API.hemmerhoidCreate, payload)
+    }
+    closeHemmerhoidModal()
+    await bootstrapData()
+  } catch {
+    /* ignore */
+  }
+}
+
+function openDeleteHemmerhoidConfirm(id) {
+  confirmDeleteType.value = 'hemmerhoid'
+  pendingDeleteId.value = id
+  pendingBulkLogIds.value = null
+  showConfirmModal.value = true
+}
+
 function normalizeLogId(logId) {
   const n = Number(logId)
   return Number.isNaN(n) ? logId : n
@@ -401,6 +524,8 @@ async function executeConfirmDelete() {
       selectedLogIds.value = selectedLogIds.value.filter((x) => normalizeLogId(x) !== id)
     } else if (confirmDeleteType.value === 'food' && pendingDeleteId.value != null) {
       await api.post(API.foodDelete, { food_id: pendingDeleteId.value })
+    } else if (confirmDeleteType.value === 'hemmerhoid' && pendingDeleteId.value != null) {
+      await api.post(API.hemmerhoidDelete, { id: pendingDeleteId.value })
     } else {
       return
     }
@@ -462,6 +587,18 @@ onMounted(() => {
         >
           Foods
         </button>
+        <button
+          type="button"
+          class="border-b-2 px-1 py-3 text-sm font-medium"
+          :class="
+            activeTab === 'hemmerhoids'
+              ? 'border-primary-500 text-primary-600 dark:text-primary-400'
+              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400'
+          "
+          @click="activeTab = 'hemmerhoids'"
+        >
+          Hemmerhoids Log
+        </button>
       </nav>
     </div>
 
@@ -484,6 +621,12 @@ onMounted(() => {
         </button>
         <button type="button" class="btn bg-info-500 text-white hover:bg-info-600" @click="addOatmeal(true)">
           Add Oatmeal w/ Blueberries
+        </button>
+        <button type="button" class="btn bg-red-500 text-white hover:bg-red-600" @click="addNamedFood(API.addBeef, 'Beef added.')">
+          Beef
+        </button>
+        <button type="button" class="btn bg-red-500 text-white hover:bg-red-600" @click="addNamedFood(API.addGluten, 'Gluten added.')">
+          Gluten
         </button>
       </div>
 
@@ -592,6 +735,51 @@ onMounted(() => {
                     type="button"
                     class="btn bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600"
                     @click="openDeleteFoodConfirm(food.id)"
+                  >
+                    X
+                  </button>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hemmerhoids Log tab -->
+    <div v-show="activeTab === 'hemmerhoids'" class="space-y-4">
+      <button type="button" class="btn bg-primary-500 text-white hover:bg-primary-600" @click="openCreateHemmerhoidModal">
+        Add Hemmerhoid Log
+      </button>
+      <p v-if="!loading && !hemmerhoidLogs.length" class="text-sm text-gray-500">No hemmerhoid log entries loaded.</p>
+      <div v-else-if="hemmerhoidLogs.length" class="card overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+            <thead class="bg-gray-50 dark:bg-gray-800">
+              <tr>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date Pooped</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Pain Level</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Blood Level</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Actions</th>
+              </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+              <tr v-for="row in hemmerhoidLogs" :key="row.id">
+                <td class="px-3 py-2 text-sm">{{ formatPoopedAt(row.date_pooped) }}</td>
+                <td class="px-3 py-2 text-sm">{{ row.pain_level }}</td>
+                <td class="px-3 py-2 text-sm">{{ row.blood_level }}</td>
+                <td class="whitespace-nowrap px-3 py-2 text-sm">
+                  <button
+                    type="button"
+                    class="btn mr-1 bg-gray-200 px-2 py-1 text-xs text-gray-800 dark:bg-gray-700 dark:text-gray-200"
+                    @click="openEditHemmerhoid(row)"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    type="button"
+                    class="btn bg-red-500 px-2 py-1 text-xs text-white hover:bg-red-600"
+                    @click="openDeleteHemmerhoidConfirm(row.id)"
                   >
                     X
                   </button>
@@ -721,6 +909,45 @@ onMounted(() => {
         <div class="flex justify-end gap-2 border-t border-gray-200 px-6 py-4 dark:border-gray-700">
           <button type="button" class="btn bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200" @click="closeLogModal">Cancel</button>
           <button type="button" class="btn bg-primary-500 text-white hover:bg-primary-600" @click="saveLogEntry">{{ logModalSaveLabel }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Hemmerhoid log modal -->
+    <div
+      v-if="showHemmerhoidModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+      @click.self="closeHemmerhoidModal"
+    >
+      <div class="w-full max-w-lg rounded-lg bg-white shadow-xl dark:bg-gray-800">
+        <div class="border-b border-gray-200 px-6 py-4 dark:border-gray-700">
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ hemmerhoidModalTitle }}</h3>
+        </div>
+        <div class="space-y-4 px-6 py-4">
+          <div>
+            <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Date Pooped</label>
+            <input v-model="newHemmerhoid.date_pooped" type="datetime-local" class="form-input w-full" />
+          </div>
+          <div>
+            <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Pain Level (1–5)</label>
+            <div class="flex items-center gap-2">
+              <button type="button" class="dietlog-step-btn" @click="stepNumeric(newHemmerhoid, 'pain_level', -1, 1, 5, 1)">−</button>
+              <input v-model.number="newHemmerhoid.pain_level" type="number" min="1" max="5" step="1" class="form-input flex-1 text-center" />
+              <button type="button" class="dietlog-step-btn" @click="stepNumeric(newHemmerhoid, 'pain_level', 1, 1, 5, 1)">+</button>
+            </div>
+          </div>
+          <div>
+            <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Blood Level (1–5)</label>
+            <div class="flex items-center gap-2">
+              <button type="button" class="dietlog-step-btn" @click="stepNumeric(newHemmerhoid, 'blood_level', -1, 1, 5, 1)">−</button>
+              <input v-model.number="newHemmerhoid.blood_level" type="number" min="1" max="5" step="1" class="form-input flex-1 text-center" />
+              <button type="button" class="dietlog-step-btn" @click="stepNumeric(newHemmerhoid, 'blood_level', 1, 1, 5, 1)">+</button>
+            </div>
+          </div>
+        </div>
+        <div class="flex justify-end gap-2 border-t border-gray-200 px-6 py-4 dark:border-gray-700">
+          <button type="button" class="btn bg-gray-200 text-gray-800 dark:bg-gray-700 dark:text-gray-200" @click="closeHemmerhoidModal">Cancel</button>
+          <button type="button" class="btn bg-primary-500 text-white hover:bg-primary-600" @click="saveHemmerhoid">{{ hemmerhoidModalSaveLabel }}</button>
         </div>
       </div>
     </div>
