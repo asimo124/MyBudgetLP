@@ -20,6 +20,7 @@ import PushNotificationsView from '@/views/PushNotificationsView.vue'
 import PushNotificationFormView from '@/views/PushNotificationFormView.vue'
 import PushScheduleFormView from '@/views/PushScheduleFormView.vue'
 import AppleNotesView from '@/views/AppleNotesView.vue'
+import AppleCalendarEventsView from '@/views/AppleCalendarEventsView.vue'
 import GroceryListView from '@/views/GroceryListView.vue'
 import DisposableBalancerView from '@/views/DisposableBalancerView.vue'
 import FoodSensitivitiesView from '@/views/FoodSensitivitiesView.vue'
@@ -42,6 +43,7 @@ const REAL_VIEWS = {
   'dietary-log': DietaryLogView,
   'push-notifications': PushNotificationsView,
   'apple-notes': AppleNotesView,
+  'apple-calendar-events': AppleCalendarEventsView,
   'grocery-list': GroceryListView,
   'food-sensitivities': FoodSensitivitiesView,
   settings: SettingsView,

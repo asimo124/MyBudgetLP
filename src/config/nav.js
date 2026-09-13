@@ -54,6 +54,7 @@ export const navGroups = [
     icon: 'ph-gear-six',
     items: [
       { name: 'Apple Notes', path: '/apple-notes', icon: 'ph-note' },
+      { name: 'Apple Calendar Events', path: '/apple-calendar-events', icon: 'ph-calendar' },
       { name: 'Grocery List', path: '/grocery-list', icon: 'ph-basket' },
       // { name: 'Weight Ratio', path: '/weight-ratio', icon: 'ph-person' },
       { name: 'Dietary Log', path: '/dietary-log', icon: 'ph-fork-knife' },
