@@ -65,6 +65,30 @@ const monthlyDisposableAfterDisplay = computed(() =>
   monthlyDisposableAfter.value == null ? '—' : monthlyDisposableAfter.value
 )
 
+const averageRows = computed(() => {
+  const rows = []
+  averages.value.forEach((avg, index) => {
+    if (avg == null || avg === '') return
+    const paycheckAvg = parseFloat(avg)
+    if (Number.isNaN(paycheckAvg)) return
+    const monthly = monthlyFromAvg(paycheckAvg)
+    if (monthly === '') return
+    rows.push({
+      index,
+      paycheckAvg,
+      monthly,
+      firstDate: dateItems.value[index - 1] || '',
+      secondDate: dateItems.value[index] || '',
+    })
+  })
+  return rows
+})
+
+const monthlyAveragesTotal = computed(() => {
+  const total = averageRows.value.reduce((sum, row) => sum + (parseFloat(row.monthly) || 0), 0)
+  return Math.round(total * 100) / 100
+})
+
 function saveTestMode() {
   localStorage.setItem('testMode', testMode.value ? '1' : '0')
 }
@@ -618,6 +642,46 @@ onMounted(() => {
           placeholder="Total"
           readonly
         />
+      </div>
+
+      <div v-if="averageRows.length" class="mt-6">
+        <h5 class="mb-3 text-sm font-semibold uppercase tracking-wide text-neutral-500">
+          Avg / Month
+        </h5>
+        <div class="overflow-x-auto rounded-xl border border-neutral-200 dark:border-neutral-600">
+          <table class="min-w-full text-left text-sm">
+            <thead class="bg-neutral-50 text-neutral-600 dark:bg-dark-3 dark:text-neutral-300">
+              <tr>
+                <th class="px-3 py-2 font-medium">Paychecks</th>
+                <th class="px-3 py-2 font-medium">Avg / Paycheck</th>
+                <th class="px-3 py-2 font-medium">Avg / Month</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="row in averageRows"
+                :key="`avg-row-${row.index}`"
+                class="border-t border-neutral-100 dark:border-neutral-700"
+              >
+                <td class="px-3 py-2 text-neutral-600 dark:text-neutral-300">
+                  {{ row.firstDate }} – {{ row.secondDate }}
+                </td>
+                <td class="px-3 py-2">{{ row.paycheckAvg }}</td>
+                <td class="px-3 py-2">{{ row.monthly }}</td>
+              </tr>
+            </tbody>
+            <tfoot>
+              <tr class="border-t border-neutral-200 bg-neutral-50 dark:border-neutral-600 dark:bg-dark-3">
+                <td class="px-3 py-2 font-semibold text-neutral-900 dark:text-white" colspan="2">
+                  Total
+                </td>
+                <td class="px-3 py-2 font-semibold text-neutral-900 dark:text-white">
+                  {{ monthlyAveragesTotal }}
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </div>
     </div>
   </div>
