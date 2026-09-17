@@ -34,9 +34,15 @@ const showDeleteModal = ref(false)
 
 const stored = loadStoredFilters()
 
+function toCutoffInteger(value) {
+  const parsed = Math.round(Number(String(value ?? '').replace(/[^0-9.]/g, '')))
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+}
+
 const filters = reactive({
   sort: stored && SORT_OPTIONS.includes(stored.sort) ? stored.sort : 'sort_order',
   sort_dir: stored && (stored.sort_dir === 'ASC' || stored.sort_dir === 'DESC') ? stored.sort_dir : 'ASC',
+  paid_by_cutoff: stored ? toCutoffInteger(stored.paid_by_cutoff) : 0,
 })
 
 watch(
@@ -61,7 +67,6 @@ const summary = reactive({
 })
 
 const increaseCreditLimitBy = ref(0)
-const paidByCutoff = ref(0)
 
 function money(value) {
   const n = Number(value)
@@ -94,7 +99,7 @@ async function loadLoans() {
         sort: filters.sort,
         sort_dir: filters.sort_dir,
         increase_credit_limit_by: increaseCreditLimitBy.value || 0,
-        paid_by_cutoff: paidByCutoff.value || 0,
+        paid_by_cutoff: filters.paid_by_cutoff || 0,
       },
     })
     loans.value = data.loans || []
@@ -111,8 +116,7 @@ async function loadLoans() {
 }
 
 async function applyFilters() {
-  const parsed = Math.round(Number(String(paidByCutoff.value).replace(/[^0-9.]/g, '')))
-  paidByCutoff.value = Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+  filters.paid_by_cutoff = toCutoffInteger(filters.paid_by_cutoff)
   mainMsg.value = ''
   await loadLoans()
 }
@@ -123,7 +127,7 @@ async function applyIncreaseCreditLimit() {
 }
 
 async function clearPaidByCutoff() {
-  paidByCutoff.value = 0
+  filters.paid_by_cutoff = 0
   await applyFilters()
 }
 
@@ -212,7 +216,7 @@ onMounted(async () => {
             <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Paid By Cutoff</label>
             <div class="relative">
               <input
-                v-model="paidByCutoff"
+                v-model="filters.paid_by_cutoff"
                 type="text"
                 inputmode="numeric"
                 class="form-input w-full pr-9"
@@ -221,7 +225,7 @@ onMounted(async () => {
                 @keyup.enter="applyFilters"
               />
               <button
-                v-if="Number(paidByCutoff) > 0"
+                v-if="Number(filters.paid_by_cutoff) > 0"
                 type="button"
                 class="absolute inset-y-0 right-0 flex items-center px-3 text-lg leading-none text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                 title="Clear"
