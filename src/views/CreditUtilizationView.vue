@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/api/client'
 
@@ -30,6 +30,16 @@ const summary = reactive({
 })
 
 const increaseCreditLimitBy = ref(0)
+
+function sumBy(key) {
+  return loans.value.reduce((carry, loan) => carry + (Number(loan[key]) || 0), 0)
+}
+
+const totals = computed(() => ({
+  debt_owed: sumBy('debt_owed'),
+  credit_limit: sumBy('credit_limit'),
+  min_payment: sumBy('min_payment'),
+}))
 
 function money(value) {
   const n = Number(value)
@@ -255,6 +265,19 @@ onMounted(async () => {
               </td>
             </tr>
           </tbody>
+          <tfoot v-if="loans.length" class="border-t-2 border-gray-300 bg-gray-50 dark:border-gray-600 dark:bg-gray-800">
+            <tr class="text-sm font-semibold text-gray-900 dark:text-white">
+              <td class="px-3 py-2">Totals</td>
+              <td class="px-3 py-2">{{ money(totals.debt_owed) }}</td>
+              <td class="px-3 py-2">{{ money(totals.credit_limit) }}</td>
+              <td class="px-3 py-2">{{ pct(summary.credit_utilization) }}</td>
+              <td class="px-3 py-2">{{ money(totals.min_payment) }}</td>
+              <td class="px-3 py-2"></td>
+              <td class="px-3 py-2"></td>
+              <td class="px-3 py-2"></td>
+              <td class="px-3 py-2"></td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </div>
