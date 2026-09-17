@@ -1,7 +1,22 @@
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/api/client'
+
+const FILTER_STORAGE_KEY = 'credit_utilization_filters'
+const SORT_OPTIONS = ['sort_order', 'debt_owed', 'title', 'milestone_order']
+
+function loadStoredFilters() {
+  try {
+    const raw = localStorage.getItem(FILTER_STORAGE_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    return parsed
+  } catch {
+    return null
+  }
+}
 
 const route = useRoute()
 const router = useRouter()
@@ -17,29 +32,36 @@ const creditUtilizationOrig = ref(0)
 const deleteId = ref(null)
 const showDeleteModal = ref(false)
 
+const stored = loadStoredFilters()
+
 const filters = reactive({
-  sort: 'sort_order',
-  sort_dir: 'ASC',
+  sort: stored && SORT_OPTIONS.includes(stored.sort) ? stored.sort : 'sort_order',
+  sort_dir: stored && (stored.sort_dir === 'ASC' || stored.sort_dir === 'DESC') ? stored.sort_dir : 'ASC',
 })
+
+watch(
+  filters,
+  (value) => {
+    try {
+      localStorage.setItem(FILTER_STORAGE_KEY, JSON.stringify(value))
+    } catch {
+      /* ignore */
+    }
+  },
+  { deep: true },
+)
 
 const summary = reactive({
   total_debt_owed: 0,
   total_credit_limit: 0,
   credit_utilization: 0,
   total_min_payment: 0,
+  paid_by_cutoff: 0,
+  paid_off_by_cutoff: [],
 })
 
 const increaseCreditLimitBy = ref(0)
-
-function sumBy(key) {
-  return loans.value.reduce((carry, loan) => carry + (Number(loan[key]) || 0), 0)
-}
-
-const totals = computed(() => ({
-  debt_owed: sumBy('debt_owed'),
-  credit_limit: sumBy('credit_limit'),
-  min_payment: sumBy('min_payment'),
-}))
+const paidByCutoff = ref(0)
 
 function money(value) {
   const n = Number(value)
@@ -72,6 +94,7 @@ async function loadLoans() {
         sort: filters.sort,
         sort_dir: filters.sort_dir,
         increase_credit_limit_by: increaseCreditLimitBy.value || 0,
+        paid_by_cutoff: paidByCutoff.value || 0,
       },
     })
     loans.value = data.loans || []
@@ -95,6 +118,18 @@ async function applySort() {
 async function applyIncreaseCreditLimit() {
   mainMsg.value = ''
   await loadLoans()
+}
+
+async function applyPaidByCutoff() {
+  const parsed = Math.round(Number(String(paidByCutoff.value).replace(/[^0-9.]/g, '')))
+  paidByCutoff.value = Number.isFinite(parsed) && parsed > 0 ? parsed : 0
+  mainMsg.value = ''
+  await loadLoans()
+}
+
+async function clearPaidByCutoff() {
+  paidByCutoff.value = 0
+  await applyPaidByCutoff()
 }
 
 function openDelete(id) {
@@ -161,7 +196,7 @@ onMounted(async () => {
 
     <div class="card">
       <div class="card-body">
-        <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <div>
             <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Sort by</label>
             <select v-model="filters.sort" class="form-input w-full">
@@ -187,7 +222,42 @@ onMounted(async () => {
               Sort
             </button>
           </div>
+          <div>
+            <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Paid By Cutoff</label>
+            <div class="relative">
+              <input
+                v-model="paidByCutoff"
+                type="text"
+                inputmode="numeric"
+                class="form-input w-full pr-9"
+                placeholder="0"
+                @change="applyPaidByCutoff"
+                @keyup.enter="applyPaidByCutoff"
+              />
+              <button
+                v-if="Number(paidByCutoff) > 0"
+                type="button"
+                class="absolute inset-y-0 right-0 flex items-center px-3 text-lg leading-none text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
+                title="Clear"
+                aria-label="Clear Paid By Cutoff"
+                @click="clearPaidByCutoff"
+              >
+                &times;
+              </button>
+            </div>
+          </div>
         </div>
+        <p v-if="summary.paid_by_cutoff > 0" class="mt-3 text-sm text-gray-600 dark:text-gray-400">
+          Paying {{ money(summary.paid_by_cutoff) }} in milestone order clears
+          <span class="font-medium text-gray-900 dark:text-white">
+            {{ summary.paid_off_by_cutoff?.length || 0 }}
+          </span>
+          loan/card<span v-if="(summary.paid_off_by_cutoff?.length || 0) !== 1">s</span><span
+            v-if="summary.paid_off_by_cutoff?.length"
+          >
+            ({{ summary.paid_off_by_cutoff.join(', ') }})</span
+          >. Those are hidden below; what is left is what you would still owe.
+        </p>
       </div>
     </div>
 
@@ -268,10 +338,10 @@ onMounted(async () => {
           <tfoot v-if="loans.length" class="border-t-2 border-gray-300 bg-gray-50 dark:border-gray-600 dark:bg-gray-800">
             <tr class="text-sm font-semibold text-gray-900 dark:text-white">
               <td class="px-3 py-2">Totals</td>
-              <td class="px-3 py-2">{{ money(totals.debt_owed) }}</td>
-              <td class="px-3 py-2">{{ money(totals.credit_limit) }}</td>
+              <td class="px-3 py-2">{{ money(summary.total_debt_owed) }}</td>
+              <td class="px-3 py-2">{{ money(summary.total_credit_limit) }}</td>
               <td class="px-3 py-2">{{ pct(summary.credit_utilization) }}</td>
-              <td class="px-3 py-2">{{ money(totals.min_payment) }}</td>
+              <td class="px-3 py-2">{{ money(summary.total_min_payment) }}</td>
               <td class="px-3 py-2"></td>
               <td class="px-3 py-2"></td>
               <td class="px-3 py-2"></td>
