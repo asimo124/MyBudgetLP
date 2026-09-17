@@ -110,7 +110,9 @@ async function loadLoans() {
   }
 }
 
-async function applySort() {
+async function applyFilters() {
+  const parsed = Math.round(Number(String(paidByCutoff.value).replace(/[^0-9.]/g, '')))
+  paidByCutoff.value = Number.isFinite(parsed) && parsed > 0 ? parsed : 0
   mainMsg.value = ''
   await loadLoans()
 }
@@ -120,16 +122,9 @@ async function applyIncreaseCreditLimit() {
   await loadLoans()
 }
 
-async function applyPaidByCutoff() {
-  const parsed = Math.round(Number(String(paidByCutoff.value).replace(/[^0-9.]/g, '')))
-  paidByCutoff.value = Number.isFinite(parsed) && parsed > 0 ? parsed : 0
-  mainMsg.value = ''
-  await loadLoans()
-}
-
 async function clearPaidByCutoff() {
   paidByCutoff.value = 0
-  await applyPaidByCutoff()
+  await applyFilters()
 }
 
 function openDelete(id) {
@@ -213,15 +208,6 @@ onMounted(async () => {
               <option value="DESC">DESC</option>
             </select>
           </div>
-          <div class="flex items-end">
-            <button
-              type="button"
-              class="btn bg-primary-500 text-white hover:bg-primary-600"
-              @click="applySort"
-            >
-              Sort
-            </button>
-          </div>
           <div>
             <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Paid By Cutoff</label>
             <div class="relative">
@@ -231,8 +217,8 @@ onMounted(async () => {
                 inputmode="numeric"
                 class="form-input w-full pr-9"
                 placeholder="0"
-                @change="applyPaidByCutoff"
-                @keyup.enter="applyPaidByCutoff"
+                @change="applyFilters"
+                @keyup.enter="applyFilters"
               />
               <button
                 v-if="Number(paidByCutoff) > 0"
@@ -245,6 +231,15 @@ onMounted(async () => {
                 &times;
               </button>
             </div>
+          </div>
+          <div class="flex items-end">
+            <button
+              type="button"
+              class="btn w-full bg-primary-500 text-white hover:bg-primary-600 sm:w-auto"
+              @click="applyFilters"
+            >
+              Search
+            </button>
           </div>
         </div>
         <p v-if="summary.paid_by_cutoff > 0" class="mt-3 text-sm text-gray-600 dark:text-gray-400">
