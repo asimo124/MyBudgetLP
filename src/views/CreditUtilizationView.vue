@@ -285,7 +285,7 @@ onMounted(async () => {
     </div>
 
     <!-- Desktop table -->
-    <div class="card hidden lg:block">
+    <div class="card hidden md:block">
       <div class="card-body overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead class="bg-gray-50 dark:bg-gray-800">
@@ -352,7 +352,7 @@ onMounted(async () => {
     </div>
 
     <!-- Mobile cards -->
-    <div class="space-y-3 lg:hidden">
+    <div class="space-y-3 md:hidden">
       <div v-if="!loans.length" class="card">
         <div class="card-body text-center text-sm italic text-gray-500">No loans/cards found</div>
       </div>
