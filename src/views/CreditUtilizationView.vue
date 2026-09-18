@@ -2,6 +2,7 @@
 import { nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/api/client'
+import { scrollToElement, waitForLayout } from '@/utils/scrollToElement'
 
 const FILTER_STORAGE_KEY = 'credit_utilization_filters'
 const SORT_OPTIONS = ['sort_order', 'debt_owed', 'title', 'milestone_order']
@@ -137,7 +138,7 @@ function scrollToLoansList() {
     document.getElementById('credit-loans-mobile'),
   ]
   const el = candidates.find((node) => node && node.offsetParent !== null)
-  el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  scrollToElement(el)
 }
 
 function openDelete(id) {
@@ -178,6 +179,7 @@ onMounted(async () => {
   await loadLoans()
   if (fromBudgetProgress) {
     await nextTick()
+    await waitForLayout()
     scrollToLoansList()
   }
 })

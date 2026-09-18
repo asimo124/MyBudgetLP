@@ -2,6 +2,7 @@
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api/client'
+import { scrollToElement, waitForLayout } from '@/utils/scrollToElement'
 
 const router = useRouter()
 
@@ -109,10 +110,7 @@ function viewInCreditUtil() {
 }
 
 function scrollToCreditUtilButton() {
-  document.getElementById('budget-progress-credit-util')?.scrollIntoView({
-    behavior: 'smooth',
-    block: 'start',
-  })
+  scrollToElement(document.getElementById('budget-progress-credit-util'))
 }
 
 const monthlyAveragesTotal = computed(() => {
@@ -352,6 +350,7 @@ async function fillToCutoff() {
 
   if (filledToCutoff) {
     await nextTick()
+    await waitForLayout()
     scrollToCreditUtilButton()
   }
 }
