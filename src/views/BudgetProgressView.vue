@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api/client'
 
@@ -39,6 +39,7 @@ const deductLabel2 = ref('Test2')
 const deductValue2 = ref(0)
 const loading = ref(false)
 const mainError = ref('')
+const CUTOFF_PAYCHECK_STORAGE_KEY = 'budget_progress_cutoff_paycheck_date'
 const cutoffPaycheckDate = ref('')
 const fillingToCutoff = ref(false)
 const fillProgress = ref('')
@@ -246,6 +247,32 @@ function cutoffKeyFromInput() {
   const selected = String(cutoffPaycheckDate.value || '')
   return cutoffPaycheckOptions.value.some((option) => option.value === selected) ? selected : ''
 }
+
+function restoreCutoffPaycheckDate() {
+  try {
+    const saved = localStorage.getItem(CUTOFF_PAYCHECK_STORAGE_KEY)
+    if (!saved) return
+    if (cutoffPaycheckOptions.value.some((option) => option.value === saved)) {
+      cutoffPaycheckDate.value = saved
+    } else {
+      localStorage.removeItem(CUTOFF_PAYCHECK_STORAGE_KEY)
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+watch(cutoffPaycheckDate, (value) => {
+  try {
+    if (value) {
+      localStorage.setItem(CUTOFF_PAYCHECK_STORAGE_KEY, value)
+    } else {
+      localStorage.removeItem(CUTOFF_PAYCHECK_STORAGE_KEY)
+    }
+  } catch {
+    /* ignore */
+  }
+})
 
 function countPaychecksTo(fromKey, targetKey) {
   let key = fromKey
@@ -523,6 +550,8 @@ onMounted(() => {
   if (localStorage.getItem('disposable_per_day')) {
     disposablePerDay.value = localStorage.getItem('disposable_per_day')
   }
+
+  restoreCutoffPaycheckDate()
 
   initializeBalance()
   loadPage('')
