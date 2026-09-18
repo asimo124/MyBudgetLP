@@ -110,7 +110,8 @@ function viewInCreditUtil() {
 }
 
 function scrollToCreditUtilButton() {
-  scrollToElement(document.getElementById('budget-progress-credit-util'))
+  const button = document.getElementById('view-in-credit-util-btn')
+  scrollToElement(button || document.getElementById('budget-progress-credit-util'))
 }
 
 const monthlyAveragesTotal = computed(() => {
@@ -863,6 +864,7 @@ onMounted(() => {
           readonly
         />
         <button
+          id="view-in-credit-util-btn"
           type="button"
           class="h-11 rounded-xl bg-primary-600 px-4 text-sm font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
           :disabled="paidByCutoffFromTotal <= 0"
