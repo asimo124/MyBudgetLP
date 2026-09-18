@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api/client'
 
@@ -105,6 +105,13 @@ function viewInCreditUtil() {
   router.push({
     name: 'credit-utilization',
     query: { paid_by_cutoff: String(paidByCutoffFromTotal.value) },
+  })
+}
+
+function scrollToCreditUtilButton() {
+  document.getElementById('budget-progress-credit-util')?.scrollIntoView({
+    behavior: 'smooth',
+    block: 'start',
   })
 }
 
@@ -298,6 +305,7 @@ async function fillToCutoff() {
 
   mainError.value = ''
   fillingToCutoff.value = true
+  let filledToCutoff = false
   sumItems.value = []
   dateItems.value = []
   spaItems.value = []
@@ -331,12 +339,20 @@ async function fillToCutoff() {
       previousKey = key
 
       addSumItem()
-      if (key >= targetKey) return
+      if (key >= targetKey) {
+        filledToCutoff = true
+        return
+      }
     }
     mainError.value = `Stopped after ${MAX_PAYCHECK_FILL} paychecks without reaching the cutoff.`
   } finally {
     fillingToCutoff.value = false
     fillProgress.value = ''
+  }
+
+  if (filledToCutoff) {
+    await nextTick()
+    scrollToCreditUtilButton()
   }
 }
 
@@ -836,7 +852,10 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="mt-4 flex flex-wrap items-center gap-3">
+      <div
+        id="budget-progress-credit-util"
+        class="mt-4 flex scroll-mt-24 flex-wrap items-center gap-3"
+      >
         <input
           type="number"
           :value="sumTotal"
