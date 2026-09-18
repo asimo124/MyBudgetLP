@@ -210,11 +210,41 @@ function nextPaycheckKey(key) {
   return toPaycheckKey(new Date(year, month, 1))
 }
 
-function cutoffKeyFromInput() {
-  const raw = String(cutoffPaycheckDate.value || '')
-  const [year, month, day] = raw.split('-').map(Number)
+function formatPaycheckLabel(key) {
+  const [year, month, day] = String(key).split('-').map(Number)
   if (!year || !month || !day) return ''
-  return toPaycheckKey(new Date(year, month - 1, day))
+  return new Date(year, month - 1, day).toLocaleDateString('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  })
+}
+
+function yearFromPaycheckKey(key) {
+  const [year, month, day] = String(key).split('-').map(Number)
+  if (!year || !month || !day) return ''
+  return toPaycheckKey(new Date(year + 1, month - 1, day))
+}
+
+const cutoffPaycheckOptions = computed(() => {
+  const currentKey = toPaycheckKey(new Date())
+  const startKey = nextPaycheckKey(currentKey)
+  const endKey = yearFromPaycheckKey(currentKey)
+  const options = []
+  let key = startKey
+  while (key && key <= endKey && options.length < 26) {
+    options.push({
+      value: key,
+      label: formatPaycheckLabel(key),
+    })
+    key = nextPaycheckKey(key)
+  }
+  return options
+})
+
+function cutoffKeyFromInput() {
+  const selected = String(cutoffPaycheckDate.value || '')
+  return cutoffPaycheckOptions.value.some((option) => option.value === selected) ? selected : ''
 }
 
 function countPaychecksTo(fromKey, targetKey) {
@@ -586,12 +616,20 @@ onMounted(() => {
           <label class="mb-1 block text-sm text-neutral-600 dark:text-neutral-300">
             Cutoff Paycheck Date
           </label>
-          <input
+          <select
             v-model="cutoffPaycheckDate"
-            type="date"
-            class="form-control h-11 w-full rounded-xl px-3 sm:w-52"
+            class="form-control h-11 w-full rounded-xl px-3 sm:w-56"
             :disabled="fillingToCutoff"
-          />
+          >
+            <option value="">Select a paycheck</option>
+            <option
+              v-for="option in cutoffPaycheckOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
         </div>
         <button
           type="button"
