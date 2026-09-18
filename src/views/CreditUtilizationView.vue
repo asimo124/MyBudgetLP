@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, reactive, ref, watch } from 'vue'
+import { nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/api/client'
 
@@ -131,6 +131,15 @@ async function clearPaidByCutoff() {
   await applyFilters()
 }
 
+function scrollToLoansList() {
+  const candidates = [
+    document.getElementById('credit-loans-desktop'),
+    document.getElementById('credit-loans-mobile'),
+  ]
+  const el = candidates.find((node) => node && node.offsetParent !== null)
+  el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+
 function openDelete(id) {
   deleteId.value = id
   showDeleteModal.value = true
@@ -159,13 +168,18 @@ onMounted(async () => {
     mainMsg.value = String(route.query.Message)
   }
   // Arriving from Budget Progress with a disposable total to project against.
-  if (route.query.paid_by_cutoff !== undefined) {
+  const fromBudgetProgress = route.query.paid_by_cutoff !== undefined
+  if (fromBudgetProgress) {
     filters.paid_by_cutoff = toCutoffInteger(route.query.paid_by_cutoff)
     const query = { ...route.query }
     delete query.paid_by_cutoff
     await router.replace({ query })
   }
   await loadLoans()
+  if (fromBudgetProgress) {
+    await nextTick()
+    scrollToLoansList()
+  }
 })
 </script>
 
@@ -292,7 +306,7 @@ onMounted(async () => {
     </div>
 
     <!-- Desktop table -->
-    <div class="card hidden md:block">
+    <div id="credit-loans-desktop" class="card hidden scroll-mt-24 md:block">
       <div class="card-body overflow-x-auto">
         <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
           <thead class="bg-gray-50 dark:bg-gray-800">
@@ -359,7 +373,7 @@ onMounted(async () => {
     </div>
 
     <!-- Mobile cards -->
-    <div class="space-y-3 md:hidden">
+    <div id="credit-loans-mobile" class="scroll-mt-24 space-y-3 md:hidden">
       <div v-if="!loans.length" class="card">
         <div class="card-body text-center text-sm italic text-gray-500">No loans/cards found</div>
       </div>
