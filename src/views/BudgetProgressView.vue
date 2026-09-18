@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import api from '@/api/client'
+
+const router = useRouter()
 
 const defaultBalanceFirst = 6584
 const defaultBalanceFifteenth = 3584
@@ -36,6 +39,12 @@ const deductLabel2 = ref('Test2')
 const deductValue2 = ref(0)
 const loading = ref(false)
 const mainError = ref('')
+const cutoffPaycheckDate = ref('')
+const fillingToCutoff = ref(false)
+const fillProgress = ref('')
+
+// Runaway guard: ~8 years of paychecks.
+const MAX_PAYCHECK_FILL = 200
 
 const latestPaycheckAvg = computed(() => {
   for (let i = averages.value.length - 1; i >= 0; i--) {
@@ -83,6 +92,20 @@ const averageRows = computed(() => {
   })
   return rows
 })
+
+// Credit Utilization takes the cutoff as a whole dollar amount.
+const paidByCutoffFromTotal = computed(() => {
+  const total = Math.round(parseFloat(sumTotal.value) || 0)
+  return total > 0 ? total : 0
+})
+
+function viewInCreditUtil() {
+  if (paidByCutoffFromTotal.value <= 0) return
+  router.push({
+    name: 'credit-utilization',
+    query: { paid_by_cutoff: String(paidByCutoffFromTotal.value) },
+  })
+}
 
 const monthlyAveragesTotal = computed(() => {
   const total = averageRows.value.reduce((sum, row) => sum + (parseFloat(row.monthly) || 0), 0)
@@ -155,7 +178,7 @@ function saveInitBalanceFifteenth() {
   }
 }
 
-function loadPage(action) {
+async function loadPage(action) {
   nextDate.value = 0
   prevDate.value = 0
   if (action === 'next') {
@@ -171,7 +194,93 @@ function loadPage(action) {
   })
   dateValue.value = `${payDate.value.getMonth() + 1}/${payDate.value.getDate()}`
   initializeBalance()
-  getExpenseDays()
+  await getExpenseDays()
+}
+
+// Paychecks land on the 1st and the 15th, so any date maps to one of them.
+function toPaycheckKey(date) {
+  const day = date.getDate() < 15 ? 1 : 15
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  return `${date.getFullYear()}-${month}-${String(day).padStart(2, '0')}`
+}
+
+function nextPaycheckKey(key) {
+  const [year, month, day] = key.split('-').map(Number)
+  if (day < 15) return toPaycheckKey(new Date(year, month - 1, 15))
+  return toPaycheckKey(new Date(year, month, 1))
+}
+
+function cutoffKeyFromInput() {
+  const raw = String(cutoffPaycheckDate.value || '')
+  const [year, month, day] = raw.split('-').map(Number)
+  if (!year || !month || !day) return ''
+  return toPaycheckKey(new Date(year, month - 1, day))
+}
+
+function countPaychecksTo(fromKey, targetKey) {
+  let key = fromKey
+  let count = 0
+  while (key < targetKey && count < MAX_PAYCHECK_FILL) {
+    key = nextPaycheckKey(key)
+    count += 1
+  }
+  return count
+}
+
+async function fillToCutoff() {
+  const targetKey = cutoffKeyFromInput()
+  if (!targetKey) {
+    mainError.value = 'Pick a cutoff paycheck date first.'
+    return
+  }
+
+  if (targetKey <= toPaycheckKey(new Date())) {
+    mainError.value = 'Pick a cutoff paycheck date after the current paycheck.'
+    return
+  }
+
+  mainError.value = ''
+  fillingToCutoff.value = true
+  sumItems.value = []
+  dateItems.value = []
+  spaItems.value = []
+  calcFinalSums()
+
+  try {
+    // Always rewind to the paycheck containing today, so the first one added
+    // below is the very next coming paycheck.
+    fillProgress.value = 'Starting at the current paycheck…'
+    payDate.value = new Date()
+    await loadPage('')
+    if (mainError.value) return
+
+    let previousKey = toPaycheckKey(payDate.value)
+    if (targetKey <= previousKey) {
+      mainError.value = 'Pick a cutoff paycheck date after the current paycheck.'
+      return
+    }
+    const expected = countPaychecksTo(previousKey, targetKey)
+
+    for (let i = 0; i < MAX_PAYCHECK_FILL; i++) {
+      fillProgress.value = `Loading paycheck ${i + 1} of ${expected}…`
+      await loadPage('next')
+      if (mainError.value) return
+
+      const key = toPaycheckKey(payDate.value)
+      if (key === previousKey) {
+        mainError.value = 'Stopped early — the paycheck date stopped advancing.'
+        return
+      }
+      previousKey = key
+
+      addSumItem()
+      if (key >= targetKey) return
+    }
+    mainError.value = `Stopped after ${MAX_PAYCHECK_FILL} paychecks without reaching the cutoff.`
+  } finally {
+    fillingToCutoff.value = false
+    fillProgress.value = ''
+  }
 }
 
 function checkBalance() {
@@ -472,6 +581,32 @@ onMounted(() => {
         />
       </div>
 
+      <div class="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-center">
+        <div>
+          <label class="mb-1 block text-sm text-neutral-600 dark:text-neutral-300">
+            Cutoff Paycheck Date
+          </label>
+          <input
+            v-model="cutoffPaycheckDate"
+            type="date"
+            class="form-control h-11 w-full rounded-xl px-3 sm:w-52"
+            :disabled="fillingToCutoff"
+          />
+        </div>
+        <button
+          type="button"
+          class="h-11 rounded-xl bg-primary-600 px-4 text-sm font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="fillingToCutoff || !cutoffPaycheckDate"
+          title="Add every paycheck from here through the cutoff date"
+          @click="fillToCutoff"
+        >
+          Submit
+        </button>
+        <p v-if="fillProgress" class="text-sm text-neutral-500 sm:self-center">
+          {{ fillProgress }}
+        </p>
+      </div>
+
       <div class="mb-4 space-y-3">
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <input
@@ -634,7 +769,7 @@ onMounted(() => {
         </div>
       </div>
 
-      <div class="mt-4">
+      <div class="mt-4 flex flex-wrap items-center gap-3">
         <input
           type="number"
           :value="sumTotal"
@@ -642,6 +777,15 @@ onMounted(() => {
           placeholder="Total"
           readonly
         />
+        <button
+          type="button"
+          class="h-11 rounded-xl bg-primary-600 px-4 text-sm font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="paidByCutoffFromTotal <= 0"
+          title="Use this total as the Paid By Cutoff on Credit Utilization"
+          @click="viewInCreditUtil"
+        >
+          View in Credit Util
+        </button>
       </div>
 
       <div v-if="averageRows.length" class="mt-6">

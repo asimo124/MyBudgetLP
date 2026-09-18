@@ -158,6 +158,13 @@ onMounted(async () => {
   if (route.query.Message) {
     mainMsg.value = String(route.query.Message)
   }
+  // Arriving from Budget Progress with a disposable total to project against.
+  if (route.query.paid_by_cutoff !== undefined) {
+    filters.paid_by_cutoff = toCutoffInteger(route.query.paid_by_cutoff)
+    const query = { ...route.query }
+    delete query.paid_by_cutoff
+    await router.replace({ query })
+  }
   await loadLoans()
 })
 </script>
