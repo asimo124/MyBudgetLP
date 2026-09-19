@@ -84,6 +84,12 @@ const canShiftLoan = computed(() => {
   return false
 })
 
+const allDebtGoalLabel = computed(() => {
+  const goal = Number(form.original_debt_goal)
+  if (!Number.isFinite(goal) || goal <= 0) return 'Toward All Debt'
+  return `Toward $${Math.round(goal).toLocaleString('en-US')}`
+})
+
 const loan1_filled = computed(() => loanFilled(form.loan1_name, form.loan1_remaining_balance))
 const loan2_filled = computed(() => loanFilled(form.loan2_name, form.loan2_remaining_balance))
 const loan3_filled = computed(() => loanFilled(form.loan3_name, form.loan3_remaining_balance))
@@ -134,6 +140,7 @@ function persistLoanForm() {
     disposable_per_paycheck15: form.disposable_per_paycheck15,
     already_spent_on_first_paycheck: form.already_spent_on_first_paycheck,
     already_spent_on_second_paycheck: form.already_spent_on_second_paycheck,
+    original_debt_goal: form.original_debt_goal,
     starting_month: form.starting_month,
     push_to_next_paycheck: form.push_to_next_paycheck,
   }
@@ -448,7 +455,7 @@ function calculateLoanCountdown() {
         bals[bi],
         form[`loan${activeN}_original_balance`]
       ),
-      debtFreePercent: debtFreeProgressPercent(remainingDebt),
+      debtFreePercent: debtFreeProgressPercent(remainingDebt, form.original_debt_goal),
     })
   }
 
@@ -549,6 +556,22 @@ async function runCalculateAndScroll() {
     <div class="card">
       <div class="card-body space-y-4">
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+          <div>
+            <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">
+              Original all-debt goal
+            </label>
+            <input
+              v-model.number="form.original_debt_goal"
+              type="number"
+              step="0.01"
+              min="0"
+              class="form-input w-full"
+              @blur="persistLoanForm"
+            />
+            <p class="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Used for the “All Debt” / Toward goal percent on every paycheck.
+            </p>
+          </div>
           <div>
             <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">
               Disposable per paycheck on the 1st of the month
@@ -739,7 +762,7 @@ async function runCalculateAndScroll() {
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward Original</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward $36,000</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ allDebtGoalLabel }}</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -824,7 +847,7 @@ async function runCalculateAndScroll() {
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward Original</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward $36,000</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ allDebtGoalLabel }}</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -905,7 +928,7 @@ async function runCalculateAndScroll() {
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward Original</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward $36,000</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ allDebtGoalLabel }}</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -972,7 +995,7 @@ async function runCalculateAndScroll() {
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward Original</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward $36,000</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ allDebtGoalLabel }}</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -1025,7 +1048,7 @@ async function runCalculateAndScroll() {
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward Original</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward $36,000</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ allDebtGoalLabel }}</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 dark:divide-gray-700">

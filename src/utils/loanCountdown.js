@@ -1,11 +1,12 @@
 export const LOAN_COUNTDOWN_STORAGE_KEY = 'loanCountdownForm'
 export const ORIGINAL_DEBT_GOAL = 36000
 
-export function debtFreeProgressPercent(remainingDebt) {
+export function debtFreeProgressPercent(remainingDebt, originalDebtGoal = ORIGINAL_DEBT_GOAL) {
   const remaining = Number(remainingDebt)
-  if (!Number.isFinite(remaining)) return 0
-  const paid = ORIGINAL_DEBT_GOAL - Math.max(0, remaining)
-  const pct = (paid / ORIGINAL_DEBT_GOAL) * 100
+  const goal = Number(originalDebtGoal)
+  if (!Number.isFinite(remaining) || !Number.isFinite(goal) || goal <= 0) return 0
+  const paid = goal - Math.max(0, remaining)
+  const pct = (paid / goal) * 100
   return Math.max(0, Math.min(100, Math.round(pct)))
 }
 
@@ -48,6 +49,7 @@ export function defaultLoanFormState() {
     disposable_per_paycheck15: null,
     already_spent_on_first_paycheck: null,
     already_spent_on_second_paycheck: null,
+    original_debt_goal: ORIGINAL_DEBT_GOAL,
     starting_month: '',
     push_to_next_paycheck: false,
   }
@@ -325,6 +327,7 @@ export function loadSavedFormInto(form) {
       'disposable_per_paycheck15',
       'already_spent_on_first_paycheck',
       'already_spent_on_second_paycheck',
+      'original_debt_goal',
       'loan1_remaining_balance',
       'loan2_remaining_balance',
       'loan3_remaining_balance',
