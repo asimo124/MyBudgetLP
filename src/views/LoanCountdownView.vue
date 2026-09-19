@@ -8,6 +8,7 @@ import {
   applyMinPrincipalAccrualsInWindow,
   appliedPrincipalThisPaycheck,
   cascadeSpillFromRoll,
+  debtFreeProgressPercent,
   defaultLoanFormState,
   emptyLoanSlot,
   fifteenthRunningTotalsText,
@@ -387,13 +388,6 @@ function calculateLoanCountdown() {
     )
     bals[bi] = roundMoney(bals[bi] - applied)
     addFreedMonthly(activeN, applied)
-    schedules[bi].push({
-      dateLabel,
-      day,
-      dateShort,
-      disposableApplied: pool,
-      runningTotal: bals[bi],
-    })
 
     if (bals[bi] <= 0) {
       bals[bi] = 0
@@ -439,6 +433,16 @@ function calculateLoanCountdown() {
         if (spilledOnto > 0) addFreedMonthly(j + 1, spilledOnto)
       }
     }
+
+    const remainingDebt = roundMoney(bals.reduce((sum, balance) => sum + Math.max(0, balance), 0))
+    schedules[bi].push({
+      dateLabel,
+      day,
+      dateShort,
+      disposableApplied: pool,
+      runningTotal: bals[bi],
+      debtFreePercent: debtFreeProgressPercent(remainingDebt),
+    })
   }
 
   loan1Schedule.value = schedules[0]
@@ -727,6 +731,7 @@ async function runCalculateAndScroll() {
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward $36,000</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -734,6 +739,7 @@ async function runCalculateAndScroll() {
                 <td class="px-3 py-2 text-sm">{{ row.dateLabel }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.disposableApplied) }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.runningTotal) }}</td>
+                <td class="px-3 py-2 text-sm">{{ row.debtFreePercent }}%</td>
               </tr>
             </tbody>
           </table>
@@ -806,6 +812,7 @@ async function runCalculateAndScroll() {
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward $36,000</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -813,6 +820,7 @@ async function runCalculateAndScroll() {
                 <td class="px-3 py-2 text-sm">{{ row.dateLabel }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.disposableApplied) }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.runningTotal) }}</td>
+                <td class="px-3 py-2 text-sm">{{ row.debtFreePercent }}%</td>
               </tr>
             </tbody>
           </table>
@@ -881,6 +889,7 @@ async function runCalculateAndScroll() {
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward $36,000</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -888,6 +897,7 @@ async function runCalculateAndScroll() {
                 <td class="px-3 py-2 text-sm">{{ row.dateLabel }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.disposableApplied) }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.runningTotal) }}</td>
+                <td class="px-3 py-2 text-sm">{{ row.debtFreePercent }}%</td>
               </tr>
             </tbody>
           </table>
@@ -942,6 +952,7 @@ async function runCalculateAndScroll() {
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward $36,000</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -949,6 +960,7 @@ async function runCalculateAndScroll() {
                 <td class="px-3 py-2 text-sm">{{ row.dateLabel }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.disposableApplied) }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.runningTotal) }}</td>
+                <td class="px-3 py-2 text-sm">{{ row.debtFreePercent }}%</td>
               </tr>
             </tbody>
           </table>
@@ -989,6 +1001,7 @@ async function runCalculateAndScroll() {
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward $36,000</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
@@ -996,6 +1009,7 @@ async function runCalculateAndScroll() {
                 <td class="px-3 py-2 text-sm">{{ row.dateLabel }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.disposableApplied) }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.runningTotal) }}</td>
+                <td class="px-3 py-2 text-sm">{{ row.debtFreePercent }}%</td>
               </tr>
             </tbody>
           </table>

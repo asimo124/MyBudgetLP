@@ -1,4 +1,13 @@
 export const LOAN_COUNTDOWN_STORAGE_KEY = 'loanCountdownForm'
+export const ORIGINAL_DEBT_GOAL = 36000
+
+export function debtFreeProgressPercent(remainingDebt) {
+  const remaining = Number(remainingDebt)
+  if (!Number.isFinite(remaining)) return 0
+  const paid = ORIGINAL_DEBT_GOAL - Math.max(0, remaining)
+  const pct = (paid / ORIGINAL_DEBT_GOAL) * 100
+  return Math.max(0, Math.min(100, Math.round(pct)))
+}
 export const LOAN_SLOT_COUNT = 5
 export const LOAN_SLOT_FIELDS = [
   'name',
@@ -209,16 +218,20 @@ export function fifteenthRunningTotalsText(schedule, minimumPaymentPercent) {
       const datePrefix = row.dateShort || 'Day 15'
       const bal = Number.isFinite(n) ? n : 0
       const minPmt = showMinPmt ? String(Math.round(bal * (pct / 100))) : ''
-      return { datePrefix, amount, minPmt }
+      const rawPct = Number(row.debtFreePercent)
+      const pctText = Number.isFinite(rawPct) ? `${Math.round(rawPct)}%` : ''
+      return { datePrefix, amount, minPmt, pctText }
     })
   if (!rows.length) return ''
   const dateWidth = Math.max(...rows.map((r) => r.datePrefix.length))
   const amountWidth = Math.max(...rows.map((r) => r.amount.length))
+  const pctWidth = Math.max(0, ...rows.map((r) => r.pctText.length))
   const padEnd = (s, width) => s + ' '.repeat(Math.max(0, width - s.length))
   return rows
     .map((r) => {
       let line = `${padEnd(r.datePrefix, dateWidth)} | ${padEnd(r.amount, amountWidth)}`
       if (showMinPmt) line += ` | Min Pmt: ${r.minPmt}`
+      if (r.pctText) line += ` | ${padEnd(r.pctText, pctWidth)}`
       return line
     })
     .join('\n')
