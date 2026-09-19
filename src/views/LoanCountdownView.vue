@@ -9,6 +9,7 @@ import {
   appliedPrincipalThisPaycheck,
   cascadeSpillFromRoll,
   debtFreeProgressPercent,
+  towardOriginalBalancePercent,
   defaultLoanFormState,
   emptyLoanSlot,
   fifteenthRunningTotalsText,
@@ -49,6 +50,7 @@ const loan5BalanceAfterLoan4Spill = ref(null)
 const loanFieldDefs = [
   { key: 'name', label: 'Name', type: 'text' },
   { key: 'remaining_balance', label: 'Remaining balance', type: 'number', step: '0.01', min: '0' },
+  { key: 'original_balance', label: 'Original Balance', type: 'number', step: '0.01', min: '0' },
   {
     key: 'adjust_disposable_per_paycheck1',
     label: 'Adjust disposable (1st paycheck)',
@@ -210,6 +212,7 @@ function clearLoanFormData() {
 }
 
 function calculateLoanCountdown() {
+  persistLoanForm()
   countdownValidationError.value = ''
   resetResultState()
 
@@ -441,6 +444,10 @@ function calculateLoanCountdown() {
       dateShort,
       disposableApplied: pool,
       runningTotal: bals[bi],
+      towardOriginalPercent: towardOriginalBalancePercent(
+        bals[bi],
+        form[`loan${activeN}_original_balance`]
+      ),
       debtFreePercent: debtFreeProgressPercent(remainingDebt),
     })
   }
@@ -731,6 +738,7 @@ async function runCalculateAndScroll() {
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward Original</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward $36,000</th>
               </tr>
             </thead>
@@ -739,6 +747,9 @@ async function runCalculateAndScroll() {
                 <td class="px-3 py-2 text-sm">{{ row.dateLabel }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.disposableApplied) }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.runningTotal) }}</td>
+                <td class="px-3 py-2 text-sm">
+                  {{ row.towardOriginalPercent == null ? '' : `${row.towardOriginalPercent}%` }}
+                </td>
                 <td class="px-3 py-2 text-sm">{{ row.debtFreePercent }}%</td>
               </tr>
             </tbody>
@@ -812,6 +823,7 @@ async function runCalculateAndScroll() {
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward Original</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward $36,000</th>
               </tr>
             </thead>
@@ -820,6 +832,9 @@ async function runCalculateAndScroll() {
                 <td class="px-3 py-2 text-sm">{{ row.dateLabel }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.disposableApplied) }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.runningTotal) }}</td>
+                <td class="px-3 py-2 text-sm">
+                  {{ row.towardOriginalPercent == null ? '' : `${row.towardOriginalPercent}%` }}
+                </td>
                 <td class="px-3 py-2 text-sm">{{ row.debtFreePercent }}%</td>
               </tr>
             </tbody>
@@ -889,6 +904,7 @@ async function runCalculateAndScroll() {
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward Original</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward $36,000</th>
               </tr>
             </thead>
@@ -897,6 +913,9 @@ async function runCalculateAndScroll() {
                 <td class="px-3 py-2 text-sm">{{ row.dateLabel }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.disposableApplied) }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.runningTotal) }}</td>
+                <td class="px-3 py-2 text-sm">
+                  {{ row.towardOriginalPercent == null ? '' : `${row.towardOriginalPercent}%` }}
+                </td>
                 <td class="px-3 py-2 text-sm">{{ row.debtFreePercent }}%</td>
               </tr>
             </tbody>
@@ -952,6 +971,7 @@ async function runCalculateAndScroll() {
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward Original</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward $36,000</th>
               </tr>
             </thead>
@@ -960,6 +980,9 @@ async function runCalculateAndScroll() {
                 <td class="px-3 py-2 text-sm">{{ row.dateLabel }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.disposableApplied) }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.runningTotal) }}</td>
+                <td class="px-3 py-2 text-sm">
+                  {{ row.towardOriginalPercent == null ? '' : `${row.towardOriginalPercent}%` }}
+                </td>
                 <td class="px-3 py-2 text-sm">{{ row.debtFreePercent }}%</td>
               </tr>
             </tbody>
@@ -1001,6 +1024,7 @@ async function runCalculateAndScroll() {
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward Original</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward $36,000</th>
               </tr>
             </thead>
@@ -1009,6 +1033,9 @@ async function runCalculateAndScroll() {
                 <td class="px-3 py-2 text-sm">{{ row.dateLabel }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.disposableApplied) }}</td>
                 <td class="px-3 py-2 text-sm">${{ formatMoney(row.runningTotal) }}</td>
+                <td class="px-3 py-2 text-sm">
+                  {{ row.towardOriginalPercent == null ? '' : `${row.towardOriginalPercent}%` }}
+                </td>
                 <td class="px-3 py-2 text-sm">{{ row.debtFreePercent }}%</td>
               </tr>
             </tbody>

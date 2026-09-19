@@ -8,10 +8,20 @@ export function debtFreeProgressPercent(remainingDebt) {
   const pct = (paid / ORIGINAL_DEBT_GOAL) * 100
   return Math.max(0, Math.min(100, Math.round(pct)))
 }
+
+export function towardOriginalBalancePercent(remaining, originalBalance) {
+  const orig = Number(originalBalance)
+  if (!Number.isFinite(orig) || orig <= 0) return null
+  const rem = Number(remaining)
+  if (!Number.isFinite(rem)) return null
+  const paid = orig - Math.max(0, rem)
+  return Math.max(0, Math.min(100, Math.round((paid / orig) * 100)))
+}
 export const LOAN_SLOT_COUNT = 5
 export const LOAN_SLOT_FIELDS = [
   'name',
   'remaining_balance',
+  'original_balance',
   'adjust_disposable_per_paycheck1',
   'adjust_disposable_per_paycheck15',
   'min_to_principal',
@@ -23,6 +33,7 @@ export function emptyLoanSlot() {
   return {
     name: '',
     remaining_balance: null,
+    original_balance: null,
     adjust_disposable_per_paycheck1: null,
     adjust_disposable_per_paycheck15: null,
     min_to_principal: null,
@@ -54,6 +65,7 @@ export function loanSlotHasData(slot) {
   if (slot.name != null && String(slot.name).trim() !== '') return true
   const numberFields = [
     'remaining_balance',
+    'original_balance',
     'adjust_disposable_per_paycheck1',
     'adjust_disposable_per_paycheck15',
     'min_to_principal',
@@ -219,19 +231,23 @@ export function fifteenthRunningTotalsText(schedule, minimumPaymentPercent) {
       const bal = Number.isFinite(n) ? n : 0
       const minPmt = showMinPmt ? String(Math.round(bal * (pct / 100))) : ''
       const rawPct = Number(row.debtFreePercent)
-      const pctText = Number.isFinite(rawPct) ? `${Math.round(rawPct)}%` : ''
-      return { datePrefix, amount, minPmt, pctText }
+      const allDebtText = Number.isFinite(rawPct) ? `${Math.round(rawPct)}%` : ''
+      const rawLoanPct = Number(row.towardOriginalPercent)
+      const loanText = Number.isFinite(rawLoanPct) ? `${Math.round(rawLoanPct)}%` : ''
+      return { datePrefix, amount, minPmt, loanText, allDebtText }
     })
   if (!rows.length) return ''
   const dateWidth = Math.max(...rows.map((r) => r.datePrefix.length))
   const amountWidth = Math.max(...rows.map((r) => r.amount.length))
-  const pctWidth = Math.max(0, ...rows.map((r) => r.pctText.length))
+  const loanWidth = Math.max(0, ...rows.map((r) => r.loanText.length))
+  const allDebtWidth = Math.max(0, ...rows.map((r) => r.allDebtText.length))
   const padEnd = (s, width) => s + ' '.repeat(Math.max(0, width - s.length))
   return rows
     .map((r) => {
       let line = `${padEnd(r.datePrefix, dateWidth)} | ${padEnd(r.amount, amountWidth)}`
       if (showMinPmt) line += ` | Min Pmt: ${r.minPmt}`
-      if (r.pctText) line += ` | ${padEnd(r.pctText, pctWidth)}`
+      line += ` | Loan: ${padEnd(r.loanText, loanWidth)}`
+      if (r.allDebtText) line += ` | All Debt: ${padEnd(r.allDebtText, allDebtWidth)}`
       return line
     })
     .join('\n')
@@ -314,6 +330,11 @@ export function loadSavedFormInto(form) {
       'loan3_remaining_balance',
       'loan4_remaining_balance',
       'loan5_remaining_balance',
+      'loan1_original_balance',
+      'loan2_original_balance',
+      'loan3_original_balance',
+      'loan4_original_balance',
+      'loan5_original_balance',
       'loan1_adjust_disposable_per_paycheck1',
       'loan1_adjust_disposable_per_paycheck15',
       'loan2_adjust_disposable_per_paycheck1',
