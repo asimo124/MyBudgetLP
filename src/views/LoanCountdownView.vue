@@ -1,6 +1,5 @@
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import api from '@/api/client'
 import {
   LOAN_COUNTDOWN_STORAGE_KEY,
@@ -25,7 +24,6 @@ import {
   towardOriginalBalancePercent,
 } from '@/utils/loanCountdown'
 
-const router = useRouter()
 const form = reactive(defaultLoanFormState())
 const monthOptions = startingMonthOptions()
 const loanExtras = reactive({})
@@ -496,20 +494,14 @@ onMounted(async () => {
       No loans with debt owed greater than 0. Add or update them on Credit Utilization.
     </div>
 
-    <div v-for="(loan, index) in cuLoans" :key="'loan-form-' + loan.id" class="card">
+    <div v-for="loan in cuLoans" :key="'loan-form-' + loan.id" class="card">
       <div class="card-body space-y-4">
-        <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-3 dark:border-gray-700">
-          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
-            {{ index + 1 }}. {{ loan.title }}
-          </h2>
-          <button
-            type="button"
-            class="btn bg-primary-500 px-3 py-1 text-xs text-white hover:bg-primary-600"
-            @click="router.push({ name: 'credit-utilization-edit', params: { id: loan.id } })"
-          >
-            Edit in Credit Utilization
-          </button>
-        </div>
+        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ loan.title }}</h2>
+        <p class="text-sm text-gray-700 dark:text-gray-300">
+          {{ formatMoney(loan.debt_owed) }}
+          · {{ formatMoney(loan.original_debt_owed) }}
+          · {{ formatMoney(loan.amount_to_principal) }}
+        </p>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
           <div v-for="field in extraFieldDefs" :key="loan.id + '-' + field.key">
             <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">{{ field.label }}</label>
