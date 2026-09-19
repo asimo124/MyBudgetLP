@@ -1,8 +1,8 @@
 <script setup>
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import api from '@/api/client'
-import { scrollToElement, waitForLayout } from '@/utils/scrollToElement'
+import { scrollToElement } from '@/utils/scrollToElement'
 
 const router = useRouter()
 
@@ -304,7 +304,6 @@ async function fillToCutoff() {
 
   mainError.value = ''
   fillingToCutoff.value = true
-  let filledToCutoff = false
   sumItems.value = []
   dateItems.value = []
   spaItems.value = []
@@ -338,21 +337,12 @@ async function fillToCutoff() {
       previousKey = key
 
       addSumItem()
-      if (key >= targetKey) {
-        filledToCutoff = true
-        return
-      }
+      if (key >= targetKey) return
     }
     mainError.value = `Stopped after ${MAX_PAYCHECK_FILL} paychecks without reaching the cutoff.`
   } finally {
     fillingToCutoff.value = false
     fillProgress.value = ''
-  }
-
-  if (filledToCutoff) {
-    await nextTick()
-    await waitForLayout()
-    scrollToCreditUtilButton()
   }
 }
 
@@ -684,6 +674,15 @@ onMounted(() => {
           @click="fillToCutoff"
         >
           Submit
+        </button>
+        <button
+          type="button"
+          class="h-11 rounded-xl border border-neutral-300 px-4 text-sm font-medium text-neutral-800 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-600 dark:text-neutral-200 dark:hover:bg-dark-3"
+          :disabled="fillingToCutoff"
+          title="Jump to the totals and View in Credit Util button"
+          @click="scrollToCreditUtilButton"
+        >
+          Jump
         </button>
         <p v-if="fillProgress" class="text-sm text-neutral-500 sm:self-center">
           {{ fillProgress }}
