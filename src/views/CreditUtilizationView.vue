@@ -1,5 +1,5 @@
 <script setup>
-import { nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/api/client'
 import { scrollToElement, waitForLayout } from '@/utils/scrollToElement'
@@ -68,6 +68,24 @@ const summary = reactive({
 })
 
 const increaseCreditLimitBy = ref(0)
+
+const remainingLoansText = computed(() => {
+  const rows = loans.value
+    .map((loan) => {
+      const name = String(loan.title || '').trim()
+      const n = Number(loan.debt_owed)
+      if (!name || !Number.isFinite(n) || n <= 0) return null
+      return { name, amount: String(Math.round(n)) }
+    })
+    .filter(Boolean)
+  if (!rows.length) return ''
+  const nameWidth = Math.max(...rows.map((row) => row.name.length))
+  const amountWidth = Math.max(...rows.map((row) => row.amount.length))
+  const padEnd = (value, width) => value + ' '.repeat(Math.max(0, width - value.length))
+  return rows
+    .map((row) => `${padEnd(row.name, nameWidth)} | ${padEnd(row.amount, amountWidth)}`)
+    .join('\n')
+})
 
 function money(value) {
   const n = Number(value)
@@ -422,6 +440,11 @@ onMounted(async () => {
         </div>
       </div>
     </div>
+
+    <pre
+      v-if="remainingLoansText"
+      class="overflow-x-auto rounded bg-gray-50 p-3 text-xs dark:bg-gray-900"
+    >{{ remainingLoansText }}</pre>
 
     <p class="text-sm font-medium text-gray-800 dark:text-gray-200">
       Total Paying Monthly: {{ money(summary.total_min_payment) }}
