@@ -511,18 +511,6 @@ onMounted(async () => {
           </button>
         </div>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Debt Owed</label>
-            <input :value="loan.debt_owed" type="number" class="form-input w-full" readonly />
-          </div>
-          <div>
-            <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Original Debt Owed</label>
-            <input :value="loan.original_debt_owed" type="number" class="form-input w-full" readonly />
-          </div>
-          <div>
-            <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Amount Goes To Principal</label>
-            <input :value="loan.amount_to_principal" type="number" class="form-input w-full" readonly />
-          </div>
           <div v-for="field in extraFieldDefs" :key="loan.id + '-' + field.key">
             <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">{{ field.label }}</label>
             <input
