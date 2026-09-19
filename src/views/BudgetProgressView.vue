@@ -127,6 +127,15 @@ const monthlyAveragesTotal = computed(() => {
   return Math.round(total * 100) / 100
 })
 
+const finalAvgMonthSplitText = computed(() => {
+  const rows = averageRows.value
+  if (!rows.length) return ''
+  const avgMonth = parseFloat(rows[rows.length - 1].monthlyRunningAvg)
+  if (Number.isNaN(avgMonth)) return ''
+  const minus1000 = Math.round((avgMonth - 1000) * 100) / 100
+  return `${minus1000} | 1000`
+})
+
 function saveTestMode() {
   localStorage.setItem('testMode', testMode.value ? '1' : '0')
 }
@@ -927,6 +936,10 @@ onMounted(() => {
             </tfoot>
           </table>
         </div>
+        <pre
+          v-if="finalAvgMonthSplitText"
+          class="mt-4 overflow-x-auto rounded bg-gray-50 p-3 text-xs dark:bg-gray-900"
+        >{{ finalAvgMonthSplitText }}</pre>
       </div>
     </div>
   </div>
