@@ -1,88 +1,65 @@
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
+import api from '@/api/client'
 import {
   LOAN_COUNTDOWN_STORAGE_KEY,
-  LOAN_SLOT_COUNT,
-  LOAN_SLOT_FIELDS,
   addDays,
   applyMinPrincipalAccrualsInWindow,
   appliedPrincipalThisPaycheck,
-  cascadeSpillFromRoll,
+  cascadeSpillFromIndex,
   debtFreeProgressPercent,
-  towardOriginalBalancePercent,
   defaultLoanFormState,
-  emptyLoanSlot,
+  emptyLoanExtras,
   fifteenthRunningTotalsText,
   formatMoney,
   formatPaycheckDateLabel,
   listPaycheckDatesFromPlanStart,
   loadSavedFormInto,
-  loanFilled,
-  loanSlotHasData,
   minPaymentFreedMonthly,
   parseStartYm,
   paycheckDisposableWithSnowball,
   roundMoney,
   startOfLocalDay,
   startingMonthOptions,
+  towardOriginalBalancePercent,
 } from '@/utils/loanCountdown'
 
+const router = useRouter()
 const form = reactive(defaultLoanFormState())
 const monthOptions = startingMonthOptions()
+const loanExtras = reactive({})
 
-const loan1Schedule = ref([])
-const loan2Schedule = ref([])
-const loan3Schedule = ref([])
-const loan4Schedule = ref([])
-const loan5Schedule = ref([])
+const cuLoans = ref([])
+const loanResults = ref([])
+const loadingLoans = ref(false)
 const countdownValidationError = ref('')
-const loanArrayError = ref('')
-const loan1PayoffLeftover = ref(null)
-const loan2PayoffLeftover = ref(null)
-const loan2BalanceAfterLoan1Spill = ref(null)
-const loan3PayoffLeftover = ref(null)
-const loan3BalanceAfterLoan2Spill = ref(null)
-const loan4PayoffLeftover = ref(null)
-const loan4BalanceAfterLoan3Spill = ref(null)
-const loan5PayoffLeftover = ref(null)
-const loan5BalanceAfterLoan4Spill = ref(null)
+const loadError = ref('')
 
-const loanFieldDefs = [
-  { key: 'name', label: 'Name', type: 'text' },
-  { key: 'remaining_balance', label: 'Remaining balance', type: 'number', step: '0.01', min: '0' },
-  { key: 'original_balance', label: 'Original Balance', type: 'number', step: '0.01', min: '0' },
+const extraFieldDefs = [
   {
     key: 'adjust_disposable_per_paycheck1',
     label: 'Adjust disposable (1st paycheck)',
-    type: 'number',
-    step: 'any',
     hint: 'Extra income (or a negative amount for income you lose) while this loan is being paid off.',
   },
   {
     key: 'adjust_disposable_per_paycheck15',
     label: 'Adjust disposable (15th paycheck)',
-    type: 'number',
-    step: 'any',
     hint: 'Extra income (or a negative amount for income you lose) while this loan is being paid off.',
   },
-  { key: 'min_to_principal', label: 'Min to principal', type: 'number', step: '0.01', min: '0' },
   {
     key: 'minimum_payment_percent',
     label: 'Minimum Payment Percent',
-    type: 'number',
-    step: 'any',
-    min: '0',
     hint: 'Percent of extra principal paid each paycheck is added to monthly disposable, then split across the 1st and 15th.',
   },
-  { key: 'day_of_month', label: 'Day of month', type: 'number', step: '1', min: '1', max: '31' },
+  {
+    key: 'day_of_month',
+    label: 'Day of month',
+    min: '1',
+    max: '31',
+    step: '1',
+  },
 ]
-
-const canShiftLoan = computed(() => {
-  for (let n = 1; n <= LOAN_SLOT_COUNT; n++) {
-    if (loanSlotHasData(getLoanSlot(n))) return true
-  }
-  return false
-})
 
 const allDebtGoalLabel = computed(() => {
   const goal = Number(form.original_debt_goal)
@@ -90,51 +67,19 @@ const allDebtGoalLabel = computed(() => {
   return `Toward $${Math.round(goal).toLocaleString('en-US')}`
 })
 
-const loan1_filled = computed(() => loanFilled(form.loan1_name, form.loan1_remaining_balance))
-const loan2_filled = computed(() => loanFilled(form.loan2_name, form.loan2_remaining_balance))
-const loan3_filled = computed(() => loanFilled(form.loan3_name, form.loan3_remaining_balance))
-const loan4_filled = computed(() => loanFilled(form.loan4_name, form.loan4_remaining_balance))
-const loan5_filled = computed(() => loanFilled(form.loan5_name, form.loan5_remaining_balance))
+const hasResults = computed(
+  () => Boolean(countdownValidationError.value) || loanResults.value.some((row) => row.schedule.length > 0)
+)
 
-function loanDisplayName(n) {
-  const name = form[`loan${n}_name`]
-  if (name && String(name).trim()) return String(name).trim()
-  return `Loan #${n}`
-}
-
-function getLoanSlot(n) {
-  const slot = emptyLoanSlot()
-  LOAN_SLOT_FIELDS.forEach((field) => {
-    slot[field] = form[`loan${n}_${field}`]
-  })
-  return slot
-}
-
-function setLoanSlot(n, slot) {
-  const src = slot || emptyLoanSlot()
-  LOAN_SLOT_FIELDS.forEach((field) => {
-    form[`loan${n}_${field}`] = Object.prototype.hasOwnProperty.call(src, field)
-      ? src[field]
-      : emptyLoanSlot()[field]
-  })
-}
-
-function getLoanSlots() {
-  const slots = []
-  for (let n = 1; n <= LOAN_SLOT_COUNT; n++) {
-    slots.push(getLoanSlot(n))
+function extrasFor(loanId) {
+  const key = String(loanId)
+  if (!loanExtras[key]) {
+    loanExtras[key] = emptyLoanExtras()
   }
-  return slots
-}
-
-function setLoanSlots(slots) {
-  for (let n = 1; n <= LOAN_SLOT_COUNT; n++) {
-    setLoanSlot(n, slots[n - 1] || emptyLoanSlot())
-  }
+  return loanExtras[key]
 }
 
 function persistLoanForm() {
-  loanArrayError.value = ''
   const payload = {
     disposable_per_paycheck1: form.disposable_per_paycheck1,
     disposable_per_paycheck15: form.disposable_per_paycheck15,
@@ -143,13 +88,8 @@ function persistLoanForm() {
     original_debt_goal: form.original_debt_goal,
     starting_month: form.starting_month,
     push_to_next_paycheck: form.push_to_next_paycheck,
+    loan_extras: { ...loanExtras },
   }
-  getLoanSlots().forEach((slot, i) => {
-    const n = i + 1
-    LOAN_SLOT_FIELDS.forEach((field) => {
-      payload[`loan${n}_${field}`] = slot[field]
-    })
-  })
   try {
     localStorage.setItem(LOAN_COUNTDOWN_STORAGE_KEY, JSON.stringify(payload))
   } catch (e) {
@@ -157,50 +97,8 @@ function persistLoanForm() {
   }
 }
 
-function unshiftLoan() {
-  loanArrayError.value = ''
-  const slots = getLoanSlots()
-  if (loanSlotHasData(slots[LOAN_SLOT_COUNT - 1])) {
-    loanArrayError.value =
-      'Cannot unshift: all 5 loan slots are in use. Clear Loan #5 first (there is no Loan #6).'
-    return
-  }
-  slots.pop()
-  slots.unshift(emptyLoanSlot())
-  setLoanSlots(slots)
-  persistLoanForm()
-  calculateLoanCountdown()
-}
-
-function shiftLoan() {
-  loanArrayError.value = ''
-  const slots = getLoanSlots()
-  if (!slots.some(loanSlotHasData)) {
-    loanArrayError.value = 'Nothing to shift: all loan slots are already empty.'
-    return
-  }
-  slots.shift()
-  slots.push(emptyLoanSlot())
-  setLoanSlots(slots)
-  persistLoanForm()
-  calculateLoanCountdown()
-}
-
 function resetResultState() {
-  loan1Schedule.value = []
-  loan2Schedule.value = []
-  loan3Schedule.value = []
-  loan4Schedule.value = []
-  loan5Schedule.value = []
-  loan1PayoffLeftover.value = null
-  loan2PayoffLeftover.value = null
-  loan2BalanceAfterLoan1Spill.value = null
-  loan3PayoffLeftover.value = null
-  loan3BalanceAfterLoan2Spill.value = null
-  loan4PayoffLeftover.value = null
-  loan4BalanceAfterLoan3Spill.value = null
-  loan5PayoffLeftover.value = null
-  loan5BalanceAfterLoan4Spill.value = null
+  loanResults.value = []
 }
 
 function clearLoanFormData() {
@@ -213,9 +111,34 @@ function clearLoanFormData() {
   Object.keys(d).forEach((key) => {
     form[key] = d[key]
   })
+  Object.keys(loanExtras).forEach((key) => {
+    delete loanExtras[key]
+  })
+  cuLoans.value.forEach((loan) => extrasFor(loan.id))
   countdownValidationError.value = ''
-  loanArrayError.value = ''
   resetResultState()
+}
+
+async function loadCuLoans() {
+  loadingLoans.value = true
+  loadError.value = ''
+  try {
+    const { data } = await api.get('/api/credit_utilization/list.php', {
+      params: {
+        sort: 'milestone_order',
+        sort_dir: 'ASC',
+        paid_by_cutoff: 0,
+        increase_credit_limit_by: 0,
+      },
+    })
+    cuLoans.value = (data.loans || []).filter((loan) => Number(loan.debt_owed) > 0)
+    cuLoans.value.forEach((loan) => extrasFor(loan.id))
+  } catch (err) {
+    loadError.value = err.response?.data?.message || 'Failed to load loans from Credit Utilization.'
+    cuLoans.value = []
+  } finally {
+    loadingLoans.value = false
+  }
 }
 
 function calculateLoanCountdown() {
@@ -223,6 +146,7 @@ function calculateLoanCountdown() {
   countdownValidationError.value = ''
   resetResultState()
 
+  const loans = cuLoans.value
   const base1 = Number(form.disposable_per_paycheck1)
   const base15 = Number(form.disposable_per_paycheck15)
   if (!form.starting_month) {
@@ -234,63 +158,19 @@ function calculateLoanCountdown() {
       'Please enter disposable for both the 1st and 15th paychecks (each must be greater than zero).'
     return
   }
-  if (!loan1_filled.value) {
-    countdownValidationError.value = 'Please enter Loan #1 name and remaining balance.'
+  if (!loans.length) {
+    countdownValidationError.value = 'No Credit Utilization loans with debt owed greater than 0.'
     return
   }
 
-  let loan1Bal = roundMoney(form.loan1_remaining_balance)
-  let loan2Bal = 0
-  if (loan2_filled.value) {
-    loan2Bal = roundMoney(form.loan2_remaining_balance)
-  } else if (form.loan2_remaining_balance != null && form.loan2_remaining_balance !== '') {
-    const b = roundMoney(form.loan2_remaining_balance)
-    if (Number.isFinite(b) && b >= 0) loan2Bal = b
-  }
-  const hadLoan2StartingBalance = loan2Bal > 0
-
-  let loan3Bal = 0
-  if (loan3_filled.value) {
-    loan3Bal = roundMoney(form.loan3_remaining_balance)
-  } else if (form.loan3_remaining_balance != null && form.loan3_remaining_balance !== '') {
-    const b3 = roundMoney(form.loan3_remaining_balance)
-    if (Number.isFinite(b3) && b3 >= 0) loan3Bal = b3
-  }
-  const hadLoan3StartingBalance = loan3Bal > 0
-
-  let loan4Bal = 0
-  if (loan4_filled.value) {
-    loan4Bal = roundMoney(form.loan4_remaining_balance)
-  } else if (form.loan4_remaining_balance != null && form.loan4_remaining_balance !== '') {
-    const b4 = roundMoney(form.loan4_remaining_balance)
-    if (Number.isFinite(b4) && b4 >= 0) loan4Bal = b4
-  }
-  const hadLoan4StartingBalance = loan4Bal > 0
-
-  let loan5Bal = 0
-  if (loan5_filled.value) {
-    loan5Bal = roundMoney(form.loan5_remaining_balance)
-  } else if (form.loan5_remaining_balance != null && form.loan5_remaining_balance !== '') {
-    const b5 = roundMoney(form.loan5_remaining_balance)
-    if (Number.isFinite(b5) && b5 >= 0) loan5Bal = b5
-  }
-  const hadLoan5StartingBalance = loan5Bal > 0
-
-  const hadChain = [
-    hadLoan2StartingBalance,
-    hadLoan3StartingBalance,
-    hadLoan4StartingBalance,
-    hadLoan5StartingBalance,
-  ]
-
-  const bals = [loan1Bal, loan2Bal, loan3Bal, loan4Bal, loan5Bal]
-  const loansCfg = []
-  for (let n = 1; n <= 5; n++) {
-    loansCfg.push({
-      dom: Number(form[`loan${n}_day_of_month`]),
-      minP: Number(form[`loan${n}_min_to_principal`]),
-    })
-  }
+  const bals = loans.map((loan) => roundMoney(loan.debt_owed) || 0)
+  const loansCfg = loans.map((loan) => {
+    const extra = extrasFor(loan.id)
+    return {
+      dom: Number(extra.day_of_month),
+      minP: Number(loan.amount_to_principal),
+    }
+  })
 
   const todayStart = startOfLocalDay(new Date())
   const planParsed = parseStartYm(form.starting_month)
@@ -314,60 +194,49 @@ function calculateLoanCountdown() {
 
   let lastMinExclusive = addDays(todayStart, -1)
   let extraMonthly = 0
+  const schedules = loans.map(() => [])
+  const payoffLeftover = loans.map(() => null)
+  const balanceAfterSpill = loans.map(() => null)
 
-  const getAdjustAdd = (loanN, isFirst) => {
-    const a1 = Number(form[`loan${loanN}_adjust_disposable_per_paycheck1`])
-    const a15 = Number(form[`loan${loanN}_adjust_disposable_per_paycheck15`])
+  const getAdjustAdd = (index, isFirst) => {
+    const extra = extrasFor(loans[index].id)
+    const a1 = Number(extra.adjust_disposable_per_paycheck1)
+    const a15 = Number(extra.adjust_disposable_per_paycheck15)
     const v1 = Number.isFinite(a1) ? a1 : 0
     const v15 = Number.isFinite(a15) ? a15 : 0
     return isFirst ? v1 : v15
   }
 
-  const addFreedMonthly = (loanN, principalPaid) => {
+  const addFreedMonthly = (index, principalPaid) => {
     extraMonthly = roundMoney(
-      extraMonthly + minPaymentFreedMonthly(principalPaid, form[`loan${loanN}_minimum_payment_percent`])
+      extraMonthly +
+        minPaymentFreedMonthly(principalPaid, extrasFor(loans[index].id).minimum_payment_percent)
     )
   }
 
-  const result = {
-    loan2BalanceAfterLoan1Spill: null,
-    loan2PayoffLeftover: null,
-    loan3PayoffLeftover: null,
-    loan3BalanceAfterLoan2Spill: null,
-    loan4PayoffLeftover: null,
-    loan4BalanceAfterLoan3Spill: null,
-    loan5PayoffLeftover: null,
-    loan5BalanceAfterLoan4Spill: null,
-  }
-
-  const schedules = [[], [], [], [], []]
   const maxPaychecks = 1200
-
   for (let pi = 0; pi < maxPaychecks; pi++) {
     const pcDate = pcDates[pi]
     if (!pcDate) break
     if (!bals.some((b) => b > 0)) break
 
-    let activeN = 0
-    for (let j = 0; j < 5; j++) {
+    let activeIndex = -1
+    for (let j = 0; j < bals.length; j++) {
       if (bals[j] > 0) {
-        activeN = j + 1
+        activeIndex = j
         break
       }
     }
-    if (!activeN) break
+    if (activeIndex < 0) break
 
     applyMinPrincipalAccrualsInWindow(bals, loansCfg, lastMinExclusive, pcDate)
     lastMinExclusive = startOfLocalDay(pcDate)
 
     const isFirst = pcDate.getDate() === 1
     const basePool = isFirst ? base1 : base15
-    const adjAdd = getAdjustAdd(activeN, isFirst)
+    const adjAdd = getAdjustAdd(activeIndex, isFirst)
     let pool = roundMoney(paycheckDisposableWithSnowball(basePool, extraMonthly) + adjAdd)
 
-    // "Already spent" is relative to the next upcoming paychecks before push.
-    // With push on, the first paycheck is skipped, so the 2nd-spent amount
-    // applies to the new first row (former 2nd paycheck).
     if (form.push_to_next_paycheck) {
       if (pi === 0) {
         const alreadySpent2 = Number(form.already_spent_on_second_paycheck)
@@ -390,118 +259,66 @@ function calculateLoanCountdown() {
     const dateLabel = formatPaycheckDateLabel(pcDate)
     const day = pcDate.getDate()
     const dateShort = pcDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    const bi = activeN - 1
     const applied = appliedPrincipalThisPaycheck(
-      bals[bi],
+      bals[activeIndex],
       pool,
-      form[`loan${activeN}_min_to_principal`]
+      loans[activeIndex].amount_to_principal
     )
-    bals[bi] = roundMoney(bals[bi] - applied)
-    addFreedMonthly(activeN, applied)
+    bals[activeIndex] = roundMoney(bals[activeIndex] - applied)
+    addFreedMonthly(activeIndex, applied)
 
-    if (bals[bi] <= 0) {
-      bals[bi] = 0
+    if (bals[activeIndex] <= 0) {
+      bals[activeIndex] = 0
       const spill = roundMoney(pool - applied)
+      payoffLeftover[activeIndex] = spill
       const balsBeforeSpill = bals.slice()
-      if (activeN === 1) {
-        loan1PayoffLeftover.value = spill
-        const balances = [bals[1], bals[2], bals[3], bals[4]]
-        cascadeSpillFromRoll(result, spill, balances, hadChain, true, 2)
-        bals[1] = balances[0]
-        bals[2] = balances[1]
-        bals[3] = balances[2]
-        bals[4] = balances[3]
-      } else if (activeN === 2) {
-        result.loan2PayoffLeftover = spill
-        const balances = [bals[1], bals[2], bals[3], bals[4]]
-        cascadeSpillFromRoll(result, spill, balances, hadChain, false, 3)
-        bals[1] = balances[0]
-        bals[2] = balances[1]
-        bals[3] = balances[2]
-        bals[4] = balances[3]
-      } else if (activeN === 3) {
-        result.loan3PayoffLeftover = spill
-        const balances = [bals[1], bals[2], bals[3], bals[4]]
-        cascadeSpillFromRoll(result, spill, balances, hadChain, false, 4)
-        bals[1] = balances[0]
-        bals[2] = balances[1]
-        bals[3] = balances[2]
-        bals[4] = balances[3]
-      } else if (activeN === 4) {
-        result.loan4PayoffLeftover = spill
-        const balances = [bals[1], bals[2], bals[3], bals[4]]
-        cascadeSpillFromRoll(result, spill, balances, hadChain, false, 5)
-        bals[1] = balances[0]
-        bals[2] = balances[1]
-        bals[3] = balances[2]
-        bals[4] = balances[3]
-      } else if (activeN === 5) {
-        result.loan5PayoffLeftover = spill
-      }
-      for (let j = 0; j < 5; j++) {
+      const spilled = cascadeSpillFromIndex(bals, activeIndex + 1, spill)
+      Object.keys(spilled.afterSpill).forEach((key) => {
+        balanceAfterSpill[Number(key)] = spilled.afterSpill[key]
+      })
+      Object.keys(spilled.leftovers).forEach((key) => {
+        payoffLeftover[Number(key)] = spilled.leftovers[key]
+      })
+      for (let j = 0; j < bals.length; j++) {
         const spilledOnto = roundMoney(balsBeforeSpill[j] - bals[j])
-        if (spilledOnto > 0) addFreedMonthly(j + 1, spilledOnto)
+        if (spilledOnto > 0) addFreedMonthly(j, spilledOnto)
       }
     }
 
     const remainingDebt = roundMoney(bals.reduce((sum, balance) => sum + Math.max(0, balance), 0))
-    schedules[bi].push({
+    schedules[activeIndex].push({
       dateLabel,
       day,
       dateShort,
       disposableApplied: pool,
-      runningTotal: bals[bi],
+      runningTotal: bals[activeIndex],
       towardOriginalPercent: towardOriginalBalancePercent(
-        bals[bi],
-        form[`loan${activeN}_original_balance`]
+        bals[activeIndex],
+        loans[activeIndex].original_debt_owed
       ),
       debtFreePercent: debtFreeProgressPercent(remainingDebt, form.original_debt_goal),
     })
   }
 
-  loan1Schedule.value = schedules[0]
-  loan2Schedule.value = schedules[1]
-  loan3Schedule.value = schedules[2]
-  loan4Schedule.value = schedules[3]
-  loan5Schedule.value = schedules[4]
-  loan2PayoffLeftover.value = result.loan2PayoffLeftover
-  loan2BalanceAfterLoan1Spill.value = result.loan2BalanceAfterLoan1Spill
-  loan3PayoffLeftover.value = result.loan3PayoffLeftover
-  loan3BalanceAfterLoan2Spill.value = result.loan3BalanceAfterLoan2Spill
-  loan4PayoffLeftover.value = result.loan4PayoffLeftover
-  loan4BalanceAfterLoan3Spill.value = result.loan4BalanceAfterLoan3Spill
-  loan5PayoffLeftover.value = result.loan5PayoffLeftover
-  loan5BalanceAfterLoan4Spill.value = result.loan5BalanceAfterLoan4Spill
+  loanResults.value = loans.map((loan, index) => ({
+    id: loan.id,
+    name: loan.title,
+    schedule: schedules[index],
+    payoffLeftover: payoffLeftover[index],
+    balanceAfterSpill: balanceAfterSpill[index],
+    minimum_payment_percent: extrasFor(loan.id).minimum_payment_percent,
+  }))
 
   if (bals.some((b) => b > 0)) {
     countdownValidationError.value =
       'Schedule stopped after 1200 paychecks (or ran out of dated paychecks); check your amounts.'
-    loan1PayoffLeftover.value = null
-    loan2PayoffLeftover.value = null
-    loan2BalanceAfterLoan1Spill.value = null
-    loan3PayoffLeftover.value = null
-    loan3BalanceAfterLoan2Spill.value = null
-    loan4PayoffLeftover.value = null
-    loan4BalanceAfterLoan3Spill.value = null
-    loan5PayoffLeftover.value = null
-    loan5BalanceAfterLoan4Spill.value = null
+    loanResults.value = loanResults.value.map((row) => ({
+      ...row,
+      payoffLeftover: null,
+      balanceAfterSpill: null,
+    }))
   }
 }
-
-onMounted(() => {
-  loadSavedFormInto(form)
-  calculateLoanCountdown()
-})
-
-const hasResults = computed(
-  () =>
-    Boolean(countdownValidationError.value) ||
-    (loan1_filled.value && loan1Schedule.value.length > 0) ||
-    loan2Schedule.value.length > 0 ||
-    loan3Schedule.value.length > 0 ||
-    loan4Schedule.value.length > 0 ||
-    loan5Schedule.value.length > 0
-)
 
 function scrollToResults() {
   const el = document.getElementById('loan-countdown-results')
@@ -524,6 +341,15 @@ async function runCalculateAndScroll() {
   await nextTick()
   scrollToResults()
 }
+
+onMounted(async () => {
+  const extras = loadSavedFormInto(form) || {}
+  Object.keys(extras).forEach((id) => {
+    loanExtras[id] = extras[id]
+  })
+  await loadCuLoans()
+  calculateLoanCountdown()
+})
 </script>
 
 <template>
@@ -532,7 +358,7 @@ async function runCalculateAndScroll() {
       <div>
         <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Loan Countdown</h1>
         <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-          Snowball payoff schedule — saved in your browser (localStorage).
+          Snowball payoff from Credit Utilization loans with debt owed. Plan settings stay in your browser.
         </p>
       </div>
       <div class="flex flex-wrap gap-2 sm:justify-end">
@@ -551,6 +377,13 @@ async function runCalculateAndScroll() {
           Calculate Loan Countdown
         </button>
       </div>
+    </div>
+
+    <div
+      v-if="loadError"
+      class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300"
+    >
+      {{ loadError }}
     </div>
 
     <div class="card">
@@ -655,52 +488,47 @@ async function runCalculateAndScroll() {
       </div>
     </div>
 
+    <div v-if="loadingLoans" class="text-sm text-gray-500">Loading loans from Credit Utilization…</div>
     <div
-      v-if="loanArrayError"
-      class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-300"
+      v-else-if="!cuLoans.length"
+      class="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-600 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-300"
     >
-      {{ loanArrayError }}
+      No loans with debt owed greater than 0. Add or update them on Credit Utilization.
     </div>
 
-    <div v-for="n in LOAN_SLOT_COUNT" :key="'loan-form-' + n" class="card">
+    <div v-for="(loan, index) in cuLoans" :key="'loan-form-' + loan.id" class="card">
       <div class="card-body space-y-4">
         <div class="flex flex-wrap items-center justify-between gap-2 border-b border-gray-200 pb-3 dark:border-gray-700">
-          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Loan #{{ n }}</h2>
-          <div v-if="n === 1" class="flex flex-wrap gap-2">
-            <button
-              type="button"
-              class="btn bg-gray-200 text-sm text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200"
-              title="Insert a blank loan at #1 and push the others down"
-              @click="unshiftLoan"
-            >
-              Insert New First Loan
-            </button>
-            <button
-              type="button"
-              class="btn bg-gray-200 text-sm text-gray-800 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200"
-              :disabled="!canShiftLoan"
-              title="Remove loan #1 and move the others up"
-              @click="shiftLoan"
-            >
-              Remove First Loan
-            </button>
-          </div>
+          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
+            {{ index + 1 }}. {{ loan.title }}
+          </h2>
+          <button
+            type="button"
+            class="btn bg-primary-500 px-3 py-1 text-xs text-white hover:bg-primary-600"
+            @click="router.push({ name: 'credit-utilization-edit', params: { id: loan.id } })"
+          >
+            Edit in Credit Utilization
+          </button>
         </div>
         <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div v-for="field in loanFieldDefs" :key="n + '-' + field.key">
+          <div>
+            <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Debt Owed</label>
+            <input :value="loan.debt_owed" type="number" class="form-input w-full" readonly />
+          </div>
+          <div>
+            <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Original Debt Owed</label>
+            <input :value="loan.original_debt_owed" type="number" class="form-input w-full" readonly />
+          </div>
+          <div>
+            <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Amount Goes To Principal</label>
+            <input :value="loan.amount_to_principal" type="number" class="form-input w-full" readonly />
+          </div>
+          <div v-for="field in extraFieldDefs" :key="loan.id + '-' + field.key">
             <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">{{ field.label }}</label>
             <input
-              v-if="field.type === 'text'"
-              v-model="form[`loan${n}_${field.key}`]"
-              type="text"
-              class="form-input w-full"
-              @blur="persistLoanForm"
-            />
-            <input
-              v-else
-              v-model.number="form[`loan${n}_${field.key}`]"
+              v-model.number="extrasFor(loan.id)[field.key]"
               type="number"
-              :step="field.step"
+              :step="field.step || 'any'"
               :min="field.min"
               :max="field.max"
               class="form-input w-full"
@@ -729,10 +557,7 @@ async function runCalculateAndScroll() {
       </button>
     </div>
 
-    <div
-      id="loan-countdown-results"
-      class="scroll-mt-4 space-y-6"
-    >
+    <div id="loan-countdown-results" class="scroll-mt-4 space-y-6">
       <div
         v-if="countdownValidationError"
         class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300"
@@ -750,330 +575,66 @@ async function runCalculateAndScroll() {
         </button>
       </div>
 
-    <!-- Loan 1 results -->
-    <div v-if="loan1_filled && loan1Schedule.length" class="card">
-      <div class="card-body space-y-4">
-        <h2 class="text-xl font-semibold text-gray-900 dark:text-white">{{ form.loan1_name }}</h2>
-        <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead class="bg-gray-50 dark:bg-gray-800">
-              <tr>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward Original</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ allDebtGoalLabel }}</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-              <tr v-for="(row, idx) in loan1Schedule" :key="'l1-' + idx">
-                <td class="px-3 py-2 text-sm">{{ row.dateLabel }}</td>
-                <td class="px-3 py-2 text-sm">${{ formatMoney(row.disposableApplied) }}</td>
-                <td class="px-3 py-2 text-sm">${{ formatMoney(row.runningTotal) }}</td>
-                <td class="px-3 py-2 text-sm">
-                  {{ row.towardOriginalPercent == null ? '' : `${row.towardOriginalPercent}%` }}
-                </td>
-                <td class="px-3 py-2 text-sm">{{ row.debtFreePercent }}%</td>
-              </tr>
-            </tbody>
-          </table>
+      <div v-for="row in loanResults" :key="'loan-result-' + row.id">
+        <div v-if="row.schedule.length" class="card">
+          <div class="card-body space-y-4">
+            <h2 class="text-xl font-semibold text-gray-900 dark:text-white">{{ row.name }}</h2>
+            <div class="overflow-x-auto">
+              <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                <thead class="bg-gray-50 dark:bg-gray-800">
+                  <tr>
+                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">
+                      Disposable per paycheck
+                    </th>
+                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward Original</th>
+                    <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">
+                      {{ allDebtGoalLabel }}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
+                  <tr v-for="(item, idx) in row.schedule" :key="row.id + '-' + idx">
+                    <td class="px-3 py-2 text-sm">{{ item.dateLabel }}</td>
+                    <td class="px-3 py-2 text-sm">${{ formatMoney(item.disposableApplied) }}</td>
+                    <td class="px-3 py-2 text-sm">${{ formatMoney(item.runningTotal) }}</td>
+                    <td class="px-3 py-2 text-sm">
+                      {{ item.towardOriginalPercent == null ? '' : `${item.towardOriginalPercent}%` }}
+                    </td>
+                    <td class="px-3 py-2 text-sm">{{ item.debtFreePercent }}%</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <pre
+              v-if="fifteenthRunningTotalsText(row.schedule, row.minimum_payment_percent)"
+              class="overflow-x-auto rounded bg-gray-50 p-3 text-xs dark:bg-gray-900"
+            >{{ fifteenthRunningTotalsText(row.schedule, row.minimum_payment_percent) }}</pre>
+            <p v-if="row.payoffLeftover !== null" class="text-base">
+              Money left over from paying {{ row.name }}:
+              <strong>${{ formatMoney(row.payoffLeftover) }}</strong>
+            </p>
+            <p v-if="row.balanceAfterSpill != null" class="text-base">
+              New balance after spill:
+              <strong>${{ formatMoney(row.balanceAfterSpill) }}</strong>
+            </p>
+          </div>
         </div>
-        <pre
-          v-if="fifteenthRunningTotalsText(loan1Schedule, form.loan1_minimum_payment_percent)"
-          class="overflow-x-auto rounded bg-gray-50 p-3 text-xs dark:bg-gray-900"
-        >{{ fifteenthRunningTotalsText(loan1Schedule, form.loan1_minimum_payment_percent) }}</pre>
-        <p v-if="loan1PayoffLeftover !== null" class="text-base">
-          Money left over from paying {{ form.loan1_name }}:
-          <strong>${{ formatMoney(loan1PayoffLeftover) }}</strong>
-        </p>
-        <p v-if="loan2BalanceAfterLoan1Spill != null" class="text-base">
-          New balance for {{ loanDisplayName(2) }}:
-          <strong>${{ formatMoney(loan2BalanceAfterLoan1Spill) }}</strong>
-        </p>
-        <p
-          v-if="loan3BalanceAfterLoan2Spill != null && loan3BalanceAfterLoan2Spill > 0 && !loan2Schedule.length"
-          class="text-base"
-        >
-          New balance for {{ loanDisplayName(3) }} (after Loan #2 spill from Loan #1):
-          <strong>${{ formatMoney(loan3BalanceAfterLoan2Spill) }}</strong>
-        </p>
-        <p
-          v-if="loan3PayoffLeftover != null && loan3PayoffLeftover > 0 && !loan2Schedule.length && !loan3Schedule.length"
-          class="text-base"
-        >
-          Money left over after spill to {{ loanDisplayName(3) }}:
-          <strong>${{ formatMoney(loan3PayoffLeftover) }}</strong>
-        </p>
-        <p
-          v-if="loan4BalanceAfterLoan3Spill != null && loan4BalanceAfterLoan3Spill > 0 && !loan2Schedule.length && !loan3Schedule.length"
-          class="text-base"
-        >
-          New balance for {{ loanDisplayName(4) }} (after upstream spill):
-          <strong>${{ formatMoney(loan4BalanceAfterLoan3Spill) }}</strong>
-        </p>
-        <p
-          v-if="loan4PayoffLeftover != null && loan4PayoffLeftover > 0 && !loan2Schedule.length && !loan3Schedule.length && !loan4Schedule.length"
-          class="text-base"
-        >
-          Money left over after spill to {{ loanDisplayName(4) }}:
-          <strong>${{ formatMoney(loan4PayoffLeftover) }}</strong>
-        </p>
-        <p
-          v-if="loan5BalanceAfterLoan4Spill != null && loan5BalanceAfterLoan4Spill > 0 && !loan2Schedule.length && !loan3Schedule.length && !loan4Schedule.length"
-          class="text-base"
-        >
-          New balance for {{ loanDisplayName(5) }} (after upstream spill):
-          <strong>${{ formatMoney(loan5BalanceAfterLoan4Spill) }}</strong>
-        </p>
-        <p
-          v-if="loan5PayoffLeftover != null && loan5PayoffLeftover > 0 && !loan2Schedule.length && !loan3Schedule.length && !loan4Schedule.length && !loan5Schedule.length"
-          class="text-base"
-        >
-          Money left over after spill to {{ loanDisplayName(5) }}:
-          <strong>${{ formatMoney(loan5PayoffLeftover) }}</strong>
-        </p>
-      </div>
-    </div>
-
-    <!-- Loan 2 results -->
-    <div v-if="loan2Schedule.length" class="card">
-      <div class="card-body space-y-4">
-        <h2 class="text-xl font-semibold text-gray-900 dark:text-white">{{ loanDisplayName(2) }}</h2>
-        <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead class="bg-gray-50 dark:bg-gray-800">
-              <tr>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward Original</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ allDebtGoalLabel }}</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-              <tr v-for="(row, idx) in loan2Schedule" :key="'l2-' + idx">
-                <td class="px-3 py-2 text-sm">{{ row.dateLabel }}</td>
-                <td class="px-3 py-2 text-sm">${{ formatMoney(row.disposableApplied) }}</td>
-                <td class="px-3 py-2 text-sm">${{ formatMoney(row.runningTotal) }}</td>
-                <td class="px-3 py-2 text-sm">
-                  {{ row.towardOriginalPercent == null ? '' : `${row.towardOriginalPercent}%` }}
-                </td>
-                <td class="px-3 py-2 text-sm">{{ row.debtFreePercent }}%</td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-else-if="row.payoffLeftover != null || row.balanceAfterSpill != null" class="card">
+          <div class="card-body space-y-2">
+            <h2 class="text-lg font-semibold text-gray-900 dark:text-white">{{ row.name }}</h2>
+            <p v-if="row.payoffLeftover != null" class="text-base">
+              Money left over from paying {{ row.name }}:
+              <strong>${{ formatMoney(row.payoffLeftover) }}</strong>
+            </p>
+            <p v-if="row.balanceAfterSpill != null" class="text-base">
+              New balance after spill:
+              <strong>${{ formatMoney(row.balanceAfterSpill) }}</strong>
+            </p>
+          </div>
         </div>
-        <pre
-          v-if="fifteenthRunningTotalsText(loan2Schedule, form.loan2_minimum_payment_percent)"
-          class="overflow-x-auto rounded bg-gray-50 p-3 text-xs dark:bg-gray-900"
-        >{{ fifteenthRunningTotalsText(loan2Schedule, form.loan2_minimum_payment_percent) }}</pre>
-        <p v-if="loan2PayoffLeftover !== null" class="text-base">
-          Money left over from paying {{ loanDisplayName(2) }}:
-          <strong>${{ formatMoney(loan2PayoffLeftover) }}</strong>
-        </p>
-        <p
-          v-if="loan3BalanceAfterLoan2Spill != null && loan3BalanceAfterLoan2Spill > 0 && loan2Schedule.length"
-          class="text-base"
-        >
-          New balance for {{ loanDisplayName(3) }}:
-          <strong>${{ formatMoney(loan3BalanceAfterLoan2Spill) }}</strong>
-        </p>
-        <p
-          v-if="loan3PayoffLeftover != null && loan3PayoffLeftover > 0 && loan2Schedule.length && !loan3Schedule.length"
-          class="text-base"
-        >
-          Money left over after spill to {{ loanDisplayName(3) }}:
-          <strong>${{ formatMoney(loan3PayoffLeftover) }}</strong>
-        </p>
-        <p
-          v-if="loan4BalanceAfterLoan3Spill != null && loan4BalanceAfterLoan3Spill > 0 && loan2Schedule.length && !loan3Schedule.length"
-          class="text-base"
-        >
-          New balance for {{ loanDisplayName(4) }} (after upstream spill):
-          <strong>${{ formatMoney(loan4BalanceAfterLoan3Spill) }}</strong>
-        </p>
-        <p
-          v-if="loan4PayoffLeftover != null && loan4PayoffLeftover > 0 && loan2Schedule.length && !loan3Schedule.length && !loan4Schedule.length"
-          class="text-base"
-        >
-          Money left over after spill to {{ loanDisplayName(4) }}:
-          <strong>${{ formatMoney(loan4PayoffLeftover) }}</strong>
-        </p>
-        <p
-          v-if="loan5BalanceAfterLoan4Spill != null && loan5BalanceAfterLoan4Spill > 0 && loan2Schedule.length && !loan3Schedule.length && !loan4Schedule.length"
-          class="text-base"
-        >
-          New balance for {{ loanDisplayName(5) }} (after upstream spill):
-          <strong>${{ formatMoney(loan5BalanceAfterLoan4Spill) }}</strong>
-        </p>
-        <p
-          v-if="loan5PayoffLeftover != null && loan5PayoffLeftover > 0 && loan2Schedule.length && !loan3Schedule.length && !loan4Schedule.length && !loan5Schedule.length"
-          class="text-base"
-        >
-          Money left over after spill to {{ loanDisplayName(5) }}:
-          <strong>${{ formatMoney(loan5PayoffLeftover) }}</strong>
-        </p>
       </div>
-    </div>
-
-    <!-- Loan 3 results -->
-    <div v-if="loan3Schedule.length" class="card">
-      <div class="card-body space-y-4">
-        <h2 class="text-xl font-semibold text-gray-900 dark:text-white">{{ loanDisplayName(3) }}</h2>
-        <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead class="bg-gray-50 dark:bg-gray-800">
-              <tr>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward Original</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ allDebtGoalLabel }}</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-              <tr v-for="(row, idx) in loan3Schedule" :key="'l3-' + idx">
-                <td class="px-3 py-2 text-sm">{{ row.dateLabel }}</td>
-                <td class="px-3 py-2 text-sm">${{ formatMoney(row.disposableApplied) }}</td>
-                <td class="px-3 py-2 text-sm">${{ formatMoney(row.runningTotal) }}</td>
-                <td class="px-3 py-2 text-sm">
-                  {{ row.towardOriginalPercent == null ? '' : `${row.towardOriginalPercent}%` }}
-                </td>
-                <td class="px-3 py-2 text-sm">{{ row.debtFreePercent }}%</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <pre
-          v-if="fifteenthRunningTotalsText(loan3Schedule, form.loan3_minimum_payment_percent)"
-          class="overflow-x-auto rounded bg-gray-50 p-3 text-xs dark:bg-gray-900"
-        >{{ fifteenthRunningTotalsText(loan3Schedule, form.loan3_minimum_payment_percent) }}</pre>
-        <p v-if="loan3PayoffLeftover !== null" class="text-base">
-          Money left over from paying {{ loanDisplayName(3) }}:
-          <strong>${{ formatMoney(loan3PayoffLeftover) }}</strong>
-        </p>
-        <p
-          v-if="loan4BalanceAfterLoan3Spill != null && loan4BalanceAfterLoan3Spill > 0 && loan3Schedule.length"
-          class="text-base"
-        >
-          New balance for {{ loanDisplayName(4) }}:
-          <strong>${{ formatMoney(loan4BalanceAfterLoan3Spill) }}</strong>
-        </p>
-        <p
-          v-if="loan4PayoffLeftover != null && loan4PayoffLeftover > 0 && loan3Schedule.length && !loan4Schedule.length"
-          class="text-base"
-        >
-          Money left over after spill to {{ loanDisplayName(4) }}:
-          <strong>${{ formatMoney(loan4PayoffLeftover) }}</strong>
-        </p>
-        <p
-          v-if="loan5BalanceAfterLoan4Spill != null && loan5BalanceAfterLoan4Spill > 0 && loan3Schedule.length && !loan4Schedule.length"
-          class="text-base"
-        >
-          New balance for {{ loanDisplayName(5) }} (after upstream spill):
-          <strong>${{ formatMoney(loan5BalanceAfterLoan4Spill) }}</strong>
-        </p>
-        <p
-          v-if="loan5PayoffLeftover != null && loan5PayoffLeftover > 0 && loan3Schedule.length && !loan4Schedule.length && !loan5Schedule.length"
-          class="text-base"
-        >
-          Money left over after spill to {{ loanDisplayName(5) }}:
-          <strong>${{ formatMoney(loan5PayoffLeftover) }}</strong>
-        </p>
-      </div>
-    </div>
-
-    <!-- Loan 4 results -->
-    <div v-if="loan4Schedule.length" class="card">
-      <div class="card-body space-y-4">
-        <h2 class="text-xl font-semibold text-gray-900 dark:text-white">{{ loanDisplayName(4) }}</h2>
-        <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead class="bg-gray-50 dark:bg-gray-800">
-              <tr>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward Original</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ allDebtGoalLabel }}</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-              <tr v-for="(row, idx) in loan4Schedule" :key="'l4-' + idx">
-                <td class="px-3 py-2 text-sm">{{ row.dateLabel }}</td>
-                <td class="px-3 py-2 text-sm">${{ formatMoney(row.disposableApplied) }}</td>
-                <td class="px-3 py-2 text-sm">${{ formatMoney(row.runningTotal) }}</td>
-                <td class="px-3 py-2 text-sm">
-                  {{ row.towardOriginalPercent == null ? '' : `${row.towardOriginalPercent}%` }}
-                </td>
-                <td class="px-3 py-2 text-sm">{{ row.debtFreePercent }}%</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <pre
-          v-if="fifteenthRunningTotalsText(loan4Schedule, form.loan4_minimum_payment_percent)"
-          class="overflow-x-auto rounded bg-gray-50 p-3 text-xs dark:bg-gray-900"
-        >{{ fifteenthRunningTotalsText(loan4Schedule, form.loan4_minimum_payment_percent) }}</pre>
-        <p v-if="loan4PayoffLeftover !== null" class="text-base">
-          Money left over from paying {{ loanDisplayName(4) }}:
-          <strong>${{ formatMoney(loan4PayoffLeftover) }}</strong>
-        </p>
-        <p
-          v-if="loan5BalanceAfterLoan4Spill != null && loan5BalanceAfterLoan4Spill > 0 && loan4Schedule.length"
-          class="text-base"
-        >
-          New balance for {{ loanDisplayName(5) }}:
-          <strong>${{ formatMoney(loan5BalanceAfterLoan4Spill) }}</strong>
-        </p>
-        <p
-          v-if="loan5PayoffLeftover != null && loan5PayoffLeftover > 0 && loan4Schedule.length && !loan5Schedule.length"
-          class="text-base"
-        >
-          Money left over after spill to {{ loanDisplayName(5) }}:
-          <strong>${{ formatMoney(loan5PayoffLeftover) }}</strong>
-        </p>
-      </div>
-    </div>
-
-    <!-- Loan 5 results -->
-    <div v-if="loan5Schedule.length" class="card">
-      <div class="card-body space-y-4">
-        <h2 class="text-xl font-semibold text-gray-900 dark:text-white">{{ loanDisplayName(5) }}</h2>
-        <div class="overflow-x-auto">
-          <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-            <thead class="bg-gray-50 dark:bg-gray-800">
-              <tr>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Date</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable per paycheck</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Running total</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Toward Original</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">{{ allDebtGoalLabel }}</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
-              <tr v-for="(row, idx) in loan5Schedule" :key="'l5-' + idx">
-                <td class="px-3 py-2 text-sm">{{ row.dateLabel }}</td>
-                <td class="px-3 py-2 text-sm">${{ formatMoney(row.disposableApplied) }}</td>
-                <td class="px-3 py-2 text-sm">${{ formatMoney(row.runningTotal) }}</td>
-                <td class="px-3 py-2 text-sm">
-                  {{ row.towardOriginalPercent == null ? '' : `${row.towardOriginalPercent}%` }}
-                </td>
-                <td class="px-3 py-2 text-sm">{{ row.debtFreePercent }}%</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <pre
-          v-if="fifteenthRunningTotalsText(loan5Schedule, form.loan5_minimum_payment_percent)"
-          class="overflow-x-auto rounded bg-gray-50 p-3 text-xs dark:bg-gray-900"
-        >{{ fifteenthRunningTotalsText(loan5Schedule, form.loan5_minimum_payment_percent) }}</pre>
-        <p v-if="loan5PayoffLeftover !== null" class="text-base">
-          Money left over from paying {{ loanDisplayName(5) }}:
-          <strong>${{ formatMoney(loan5PayoffLeftover) }}</strong>
-        </p>
-      </div>
-    </div>
 
       <div v-if="hasResults" class="flex justify-end pb-2">
         <button

@@ -21,6 +21,7 @@ const bills = ref([])
 const form = reactive({
   title: '',
   debt_owed: '',
+  original_debt_owed: '',
   credit_limit: '',
   min_payment: '',
   amount_to_principal: '',
@@ -45,6 +46,7 @@ async function loadLoan() {
   const loan = data.loan
   form.title = loan.title || ''
   form.debt_owed = loan.debt_owed
+  form.original_debt_owed = loan.original_debt_owed
   form.credit_limit = loan.credit_limit
   form.min_payment = loan.min_payment
   form.amount_to_principal = loan.amount_to_principal
@@ -65,6 +67,7 @@ async function save() {
         id: Number(route.params.id),
         title: form.title,
         debt_owed: form.debt_owed,
+        original_debt_owed: form.original_debt_owed,
         credit_limit: form.credit_limit,
         min_payment: form.min_payment,
         amount_to_principal: form.amount_to_principal,
@@ -82,6 +85,7 @@ async function save() {
       const { data } = await api.post('/api/credit_utilization/create.php', {
         title: form.title,
         debt_owed: form.debt_owed,
+        original_debt_owed: form.original_debt_owed,
         credit_limit: form.credit_limit,
         min_payment: form.min_payment,
         amount_to_principal: form.amount_to_principal,
@@ -152,6 +156,10 @@ onMounted(async () => {
           <div>
             <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Debt Owed</label>
             <input v-model="form.debt_owed" type="number" step="any" class="form-input w-full" />
+          </div>
+          <div>
+            <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Original Debt Owed</label>
+            <input v-model="form.original_debt_owed" type="number" step="any" class="form-input w-full" />
           </div>
           <div>
             <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Credit Limit</label>

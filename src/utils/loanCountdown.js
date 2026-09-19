@@ -43,8 +43,17 @@ export function emptyLoanSlot() {
   }
 }
 
+export function emptyLoanExtras() {
+  return {
+    adjust_disposable_per_paycheck1: null,
+    adjust_disposable_per_paycheck15: null,
+    minimum_payment_percent: null,
+    day_of_month: null,
+  }
+}
+
 export function defaultLoanFormState() {
-  const state = {
+  return {
     disposable_per_paycheck1: null,
     disposable_per_paycheck15: null,
     already_spent_on_first_paycheck: null,
@@ -53,13 +62,6 @@ export function defaultLoanFormState() {
     starting_month: '',
     push_to_next_paycheck: false,
   }
-  for (let n = 1; n <= LOAN_SLOT_COUNT; n++) {
-    const slot = emptyLoanSlot()
-    LOAN_SLOT_FIELDS.forEach((field) => {
-      state[`loan${n}_${field}`] = slot[field]
-    })
-  }
-  return state
 }
 
 export function loanSlotHasData(slot) {
@@ -136,10 +138,10 @@ export function applyMinPrincipalAccrualsInWindow(bals, loansCfg, lastExclusive,
     const mm = d.getMonth()
     const dim = new Date(yy, mm + 1, 0).getDate()
     const dayDom = d.getDate()
-    for (let loanN = 1; loanN <= 5; loanN++) {
-      const bi = loanN - 1
+    for (let bi = 0; bi < bals.length; bi++) {
       if (bals[bi] <= 0) continue
       const cfg = loansCfg[bi]
+      if (!cfg) continue
       const reqDom = cfg.dom
       if (!Number.isFinite(reqDom) || reqDom < 1 || reqDom > 31) continue
       const targetDom = Math.min(Math.floor(reqDom), dim)
@@ -183,35 +185,26 @@ export function appliedPrincipalThisPaycheck(balance, pool, minPrincipal) {
 }
 
 /**
- * Apply spill dollars sequentially to loans 2–5. Mutates balances[0..3] = [loan2..loan5].
+ * Apply spill dollars to later loans starting at startIndex. Mutates bals.
  */
-export function cascadeSpillFromRoll(result, initialRoll, balances, had, fromLoan1Payoff, firstLoanIndex) {
-  const start = firstLoanIndex == null ? 2 : firstLoanIndex
-  let r = roundMoney(initialRoll)
-  const payoffKeys = ['loan2PayoffLeftover', 'loan3PayoffLeftover', 'loan4PayoffLeftover', 'loan5PayoffLeftover']
-  const afterKeys = ['loan3BalanceAfterLoan2Spill', 'loan4BalanceAfterLoan3Spill', 'loan5BalanceAfterLoan4Spill']
-  for (let loanN = start; loanN <= 5; loanN++) {
-    const i = loanN - 2
-    if (balances[i] > 0 && r > 0) {
-      const to = roundMoney(Math.min(balances[i], r))
-      balances[i] = Math.max(0, roundMoney(balances[i] - to))
+export function cascadeSpillFromIndex(bals, startIndex, spill) {
+  let r = roundMoney(spill)
+  const afterSpill = {}
+  const leftovers = {}
+  for (let i = startIndex; i < bals.length; i++) {
+    const before = bals[i]
+    if (before > 0 && r > 0) {
+      const to = roundMoney(Math.min(before, r))
+      bals[i] = Math.max(0, roundMoney(before - to))
       r = roundMoney(r - to)
-      if (fromLoan1Payoff && loanN === 2 && had[0]) {
-        result.loan2BalanceAfterLoan1Spill = balances[0]
-      }
+      afterSpill[i] = bals[i]
     }
-    if (balances[i] <= 0) {
-      balances[i] = 0
-      if (had[i]) {
-        result[payoffKeys[i]] = r
-      }
+    if (before > 0 && bals[i] <= 0) {
+      bals[i] = 0
+      leftovers[i] = r
     }
   }
-  for (let i = 0; i < 3; i++) {
-    if (balances[i] <= 0 && had[i + 1]) {
-      result[afterKeys[i]] = balances[i + 1]
-    }
-  }
+  return { leftover: r, afterSpill, leftovers }
 }
 
 export function formatMoney(value) {
@@ -281,9 +274,9 @@ export function startingMonthOptions() {
 export function loadSavedFormInto(form) {
   try {
     const raw = localStorage.getItem(LOAN_COUNTDOWN_STORAGE_KEY)
-    if (!raw) return
+    if (!raw) return {}
     const saved = JSON.parse(raw)
-    if (!saved || typeof saved !== 'object') return
+    if (!saved || typeof saved !== 'object') return {}
 
     if (
       saved.disposable_per_month != null &&
@@ -298,29 +291,6 @@ export function loadSavedFormInto(form) {
       }
     }
 
-    for (let n = 1; n <= 5; n++) {
-      const k1 = `loan${n}_adjust_disposable_per_paycheck1`
-      const k15 = `loan${n}_adjust_disposable_per_paycheck15`
-      if (saved[k1] != null && saved[k1] !== '') continue
-      const legacyP = saved[`loan${n}_adjust_disposable_per_paycheck`]
-      if (legacyP != null && legacyP !== '') {
-        const pv = Number(legacyP)
-        if (Number.isFinite(pv)) {
-          saved[k1] = pv
-          saved[k15] = pv
-        }
-        continue
-      }
-      const legacyM = saved[`loan${n}_adjust_disposable_per_month`]
-      if (legacyM != null && legacyM !== '') {
-        const mv = Number(legacyM) / 2
-        if (Number.isFinite(mv)) {
-          saved[k1] = mv
-          saved[k15] = mv
-        }
-      }
-    }
-
     const defaults = defaultLoanFormState()
     const numberKeys = new Set([
       'disposable_per_paycheck1',
@@ -328,41 +298,6 @@ export function loadSavedFormInto(form) {
       'already_spent_on_first_paycheck',
       'already_spent_on_second_paycheck',
       'original_debt_goal',
-      'loan1_remaining_balance',
-      'loan2_remaining_balance',
-      'loan3_remaining_balance',
-      'loan4_remaining_balance',
-      'loan5_remaining_balance',
-      'loan1_original_balance',
-      'loan2_original_balance',
-      'loan3_original_balance',
-      'loan4_original_balance',
-      'loan5_original_balance',
-      'loan1_adjust_disposable_per_paycheck1',
-      'loan1_adjust_disposable_per_paycheck15',
-      'loan2_adjust_disposable_per_paycheck1',
-      'loan2_adjust_disposable_per_paycheck15',
-      'loan3_adjust_disposable_per_paycheck1',
-      'loan3_adjust_disposable_per_paycheck15',
-      'loan4_adjust_disposable_per_paycheck1',
-      'loan4_adjust_disposable_per_paycheck15',
-      'loan5_adjust_disposable_per_paycheck1',
-      'loan5_adjust_disposable_per_paycheck15',
-      'loan1_min_to_principal',
-      'loan2_min_to_principal',
-      'loan3_min_to_principal',
-      'loan4_min_to_principal',
-      'loan5_min_to_principal',
-      'loan1_minimum_payment_percent',
-      'loan2_minimum_payment_percent',
-      'loan3_minimum_payment_percent',
-      'loan4_minimum_payment_percent',
-      'loan5_minimum_payment_percent',
-      'loan1_day_of_month',
-      'loan2_day_of_month',
-      'loan3_day_of_month',
-      'loan4_day_of_month',
-      'loan5_day_of_month',
     ])
 
     Object.keys(defaults).forEach((key) => {
@@ -383,7 +318,27 @@ export function loadSavedFormInto(form) {
         form[key] = v
       }
     })
+
+    const extras = {}
+    if (saved.loan_extras && typeof saved.loan_extras === 'object') {
+      Object.keys(saved.loan_extras).forEach((id) => {
+        const src = saved.loan_extras[id] || {}
+        const slot = emptyLoanExtras()
+        Object.keys(slot).forEach((field) => {
+          const v = src[field]
+          if (v === null || v === undefined || v === '') {
+            slot[field] = null
+          } else {
+            const n = Number(v)
+            slot[field] = Number.isNaN(n) ? null : n
+          }
+        })
+        extras[id] = slot
+      })
+    }
+    return extras
   } catch (e) {
     console.warn('Could not load loan form from local storage', e)
+    return {}
   }
 }
