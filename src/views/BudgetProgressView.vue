@@ -78,16 +78,24 @@ const monthlyDisposableAfterDisplay = computed(() =>
 
 const averageRows = computed(() => {
   const rows = []
+  let paycheckSum = 0
+  let monthlySum = 0
+  let count = 0
   averages.value.forEach((avg, index) => {
     if (avg == null || avg === '') return
     const paycheckAvg = parseFloat(avg)
     if (Number.isNaN(paycheckAvg)) return
     const monthly = monthlyFromAvg(paycheckAvg)
     if (monthly === '') return
+    count += 1
+    paycheckSum += paycheckAvg
+    monthlySum += parseFloat(monthly) || 0
     rows.push({
       index,
       paycheckAvg,
+      paycheckRunningAvg: Math.round((paycheckSum / count) * 100) / 100,
       monthly,
+      monthlyRunningAvg: Math.round((monthlySum / count) * 100) / 100,
       firstDate: dateItems.value[index - 1] || '',
       secondDate: dateItems.value[index] || '',
     })
@@ -883,8 +891,10 @@ onMounted(() => {
             <thead class="bg-neutral-50 text-neutral-600 dark:bg-dark-3 dark:text-neutral-300">
               <tr>
                 <th class="px-3 py-2 font-medium">Paychecks</th>
-                <th class="px-3 py-2 font-medium">Avg / Paycheck</th>
-                <th class="px-3 py-2 font-medium">Avg / Month</th>
+                <th class="px-3 py-2 font-medium">Paycheck</th>
+                <th class="px-3 py-2 font-medium">Avg Paycheck</th>
+                <th class="px-3 py-2 font-medium">Month</th>
+                <th class="px-3 py-2 font-medium">Avg Month</th>
               </tr>
             </thead>
             <tbody>
@@ -897,17 +907,22 @@ onMounted(() => {
                   {{ row.firstDate }} – {{ row.secondDate }}
                 </td>
                 <td class="px-3 py-2">{{ row.paycheckAvg }}</td>
+                <td class="px-3 py-2">{{ row.paycheckRunningAvg }}</td>
                 <td class="px-3 py-2">{{ row.monthly }}</td>
+                <td class="px-3 py-2">{{ row.monthlyRunningAvg }}</td>
               </tr>
             </tbody>
             <tfoot>
               <tr class="border-t border-neutral-200 bg-neutral-50 dark:border-neutral-600 dark:bg-dark-3">
-                <td class="px-3 py-2 font-semibold text-neutral-900 dark:text-white" colspan="2">
+                <td class="px-3 py-2 font-semibold text-neutral-900 dark:text-white">
                   Total
                 </td>
+                <td class="px-3 py-2"></td>
+                <td class="px-3 py-2"></td>
                 <td class="px-3 py-2 font-semibold text-neutral-900 dark:text-white">
                   {{ monthlyAveragesTotal }}
                 </td>
+                <td class="px-3 py-2"></td>
               </tr>
             </tfoot>
           </table>
