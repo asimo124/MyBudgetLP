@@ -132,7 +132,7 @@ const finalAvgMonthSplitText = computed(() => {
   if (!rows.length) return ''
   const avgMonth = parseFloat(rows[rows.length - 1].monthlyRunningAvg)
   if (Number.isNaN(avgMonth)) return ''
-  const minus1000 = Math.round((avgMonth - 1000) * 100) / 100
+  const minus1000 = Math.round(avgMonth - 1000)
   return `${minus1000} | 1000`
 })
 
