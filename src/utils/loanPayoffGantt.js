@@ -14,6 +14,12 @@ export const GANTT_COLORS = [
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 
+function nextPaycheckDate(date) {
+  const d = new Date(date)
+  if (d.getDate() < 15) return new Date(d.getFullYear(), d.getMonth(), 15)
+  return new Date(d.getFullYear(), d.getMonth() + 1, 1)
+}
+
 export function buildPayoffGantt(barsInput) {
   const empty = { bars: [], months: [], years: [], timelineWidth: 0 }
   const source = Array.isArray(barsInput) ? barsInput.filter((bar) => bar?.start && bar?.end) : []
@@ -24,13 +30,22 @@ export function buildPayoffGantt(barsInput) {
     color: bar.color || GANTT_COLORS[index % GANTT_COLORS.length],
   }))
 
+  bars.forEach((bar, index) => {
+    const next = bars[index + 1]
+    const filledEnd = next ? next.start : nextPaycheckDate(bar.end)
+    bar.visualEnd = filledEnd > bar.end ? filledEnd : bar.end
+  })
+
   const rangeStart = new Date(bars[0].start.getFullYear(), bars[0].start.getMonth(), 1)
   bars.forEach((bar) => {
     const start = new Date(bar.start.getFullYear(), bar.start.getMonth(), 1)
     if (start < rangeStart) rangeStart.setTime(start.getTime())
   })
 
-  const lastEnd = bars.reduce((latest, bar) => (bar.end > latest ? bar.end : latest), bars[0].end)
+  const lastEnd = bars.reduce(
+    (latest, bar) => (bar.visualEnd > latest ? bar.visualEnd : latest),
+    bars[0].visualEnd
+  )
   const rangeEnd = new Date(lastEnd.getFullYear(), lastEnd.getMonth() + 1, 1)
   const months = []
   const monthCursor = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1)
@@ -55,7 +70,7 @@ export function buildPayoffGantt(barsInput) {
   const rangeMs = Math.max(rangeEnd.getTime() - rangeStartMs, 1)
   bars.forEach((bar) => {
     const startMs = Math.max(bar.start.getTime(), rangeStartMs)
-    const endMs = Math.max(bar.end.getTime(), startMs + 1)
+    const endMs = Math.max(bar.visualEnd.getTime(), startMs + 1)
     bar.leftPct = ((startMs - rangeStartMs) / rangeMs) * 100
     bar.widthPct = Math.max(((endMs - startMs) / rangeMs) * 100, 1.5)
     bar.endLabel = `${MONTH_LABELS[bar.end.getMonth()]} ${bar.end.getFullYear()}`
