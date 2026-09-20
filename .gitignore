@@ -27,3 +27,5 @@ dist-ssr
 .env.production
 
 .vscode/
+
+test3.sh
