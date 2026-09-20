@@ -1,6 +1,6 @@
 <script setup>
 import { computed } from 'vue'
-import { buildPayoffGantt, GANTT_MONTH_PX } from '@/utils/loanPayoffGantt'
+import { buildPayoffGantt } from '@/utils/loanPayoffGantt'
 
 const props = defineProps({
   bars: { type: Array, default: () => [] },
@@ -9,6 +9,8 @@ const props = defineProps({
 })
 
 const gantt = computed(() => buildPayoffGantt(props.bars))
+const monthCount = computed(() => gantt.value.months.length)
+const minTimelinePx = computed(() => Math.max(monthCount.value * 36, 0))
 </script>
 
 <template>
@@ -22,46 +24,50 @@ const gantt = computed(() => buildPayoffGantt(props.bars))
       </div>
       <p v-if="message" class="text-sm text-gray-600 dark:text-gray-300">{{ message }}</p>
       <div v-else-if="gantt.bars.length" class="overflow-x-auto">
-        <div class="min-w-max">
-          <div class="flex">
-            <div class="w-36 shrink-0"></div>
-            <div
-              v-for="(year, yearIndex) in gantt.years"
-              :key="'gantt-year-' + year.year"
-              class="border-b border-gray-200 text-center text-xs font-semibold text-gray-900 dark:border-gray-700 dark:text-white"
-              :class="yearIndex % 2 === 0 ? 'bg-gray-50 dark:bg-gray-800' : 'bg-white dark:bg-gray-900'"
-              :style="{ width: year.span * GANTT_MONTH_PX + 'px' }"
-            >
-              {{ year.year }}
+        <div class="w-full" :style="{ minWidth: 160 + minTimelinePx + 'px' }">
+          <div class="flex w-full">
+            <div class="w-40 shrink-0"></div>
+            <div class="flex min-w-0 flex-1">
+              <div
+                v-for="(year, yearIndex) in gantt.years"
+                :key="'gantt-year-' + year.year"
+                class="border-b border-gray-200 text-center text-xs font-semibold text-gray-900 dark:border-gray-700 dark:text-white"
+                :class="yearIndex % 2 === 0 ? 'bg-gray-50 dark:bg-gray-800' : 'bg-white dark:bg-gray-900'"
+                :style="{ flex: year.span }"
+              >
+                {{ year.year }}
+              </div>
             </div>
           </div>
-          <div class="flex">
-            <div class="w-36 shrink-0"></div>
-            <div
-              v-for="(month, monthIndex) in gantt.months"
-              :key="'gantt-month-' + monthIndex"
-              class="border-b border-gray-100 py-1 text-center text-[10px] text-gray-500 dark:border-gray-800 dark:text-gray-400"
-              :class="month.isYearStart ? 'border-l border-gray-300 dark:border-gray-600' : ''"
-              :style="{ width: GANTT_MONTH_PX + 'px' }"
-            >
-              {{ month.label }}
+          <div class="flex w-full">
+            <div class="w-40 shrink-0"></div>
+            <div class="flex min-w-0 flex-1">
+              <div
+                v-for="(month, monthIndex) in gantt.months"
+                :key="'gantt-month-' + monthIndex"
+                class="min-w-0 flex-1 border-b border-gray-100 py-1 text-center text-[10px] text-gray-500 dark:border-gray-800 dark:text-gray-400"
+                :class="month.isYearStart ? 'border-l border-gray-300 dark:border-gray-600' : ''"
+              >
+                {{ month.label }}
+              </div>
             </div>
           </div>
-          <div v-for="bar in gantt.bars" :key="'gantt-bar-' + bar.id" class="flex items-center">
+          <div v-for="bar in gantt.bars" :key="'gantt-bar-' + bar.id" class="flex w-full items-center">
             <div
-              class="w-36 shrink-0 truncate pr-2 text-sm font-medium text-gray-900 dark:text-white"
+              class="w-40 shrink-0 truncate pr-2 text-sm font-medium text-gray-900 dark:text-white"
               :title="bar.title"
             >
               {{ bar.title }}
             </div>
-            <div class="relative h-8" :style="{ width: gantt.timelineWidth + 'px' }">
-              <div
-                v-for="(month, monthIndex) in gantt.months"
-                :key="'gantt-grid-' + bar.id + '-' + monthIndex"
-                class="absolute inset-y-0 border-r border-gray-100 dark:border-gray-800"
-                :class="month.isYearStart ? 'border-l border-gray-300 dark:border-gray-600' : ''"
-                :style="{ left: monthIndex * GANTT_MONTH_PX + 'px', width: GANTT_MONTH_PX + 'px' }"
-              ></div>
+            <div class="relative h-8 min-w-0 flex-1">
+              <div class="absolute inset-0 flex">
+                <div
+                  v-for="(month, monthIndex) in gantt.months"
+                  :key="'gantt-grid-' + bar.id + '-' + monthIndex"
+                  class="min-w-0 flex-1 border-r border-gray-100 dark:border-gray-800"
+                  :class="month.isYearStart ? 'border-l border-gray-300 dark:border-gray-600' : ''"
+                ></div>
+              </div>
               <div
                 class="absolute top-1 flex h-6 items-center overflow-hidden rounded px-1.5 text-[10px] font-medium text-white"
                 :style="{
