@@ -342,3 +342,210 @@ export function loadSavedFormInto(form) {
     return {}
   }
 }
+
+function extrasForId(extrasById, loanId) {
+  const key = String(loanId)
+  if (extrasById && extrasById[key]) return extrasById[key]
+  return emptyLoanExtras()
+}
+
+export function compareByMilestone(a, b) {
+  const aOrder = Number(a.milestone_order) > 0 ? Number(a.milestone_order) : 9999
+  const bOrder = Number(b.milestone_order) > 0 ? Number(b.milestone_order) : 9999
+  if (aOrder !== bOrder) return aOrder - bOrder
+  return Number(a.id) - Number(b.id)
+}
+
+/** Snowball used by Loan Countdown and the payoff Gantt. */
+export function simulateLoanCountdown(loansInput, form, extrasById = {}) {
+  const empty = { error: '', results: [], bars: [] }
+  const loans = Array.isArray(loansInput) ? loansInput : []
+  const base1 = Number(form?.disposable_per_paycheck1)
+  const base15 = Number(form?.disposable_per_paycheck15)
+
+  if (!form?.starting_month) {
+    return { ...empty, error: 'Please select a starting month.' }
+  }
+  if (!Number.isFinite(base1) || base1 <= 0 || !Number.isFinite(base15) || base15 <= 0) {
+    return {
+      ...empty,
+      error:
+        'Please enter disposable for both the 1st and 15th paychecks (each must be greater than zero).',
+    }
+  }
+  if (!loans.length) {
+    return { ...empty, error: 'No Credit Utilization loans with debt owed greater than 0.' }
+  }
+
+  const bals = loans.map((loan) => roundMoney(loan.debt_owed) || 0)
+  const loansCfg = loans.map((loan) => {
+    const extra = extrasForId(extrasById, loan.id)
+    return {
+      dom: Number(extra.day_of_month),
+      minP: Number(loan.amount_to_principal),
+    }
+  })
+
+  const todayStart = startOfLocalDay(new Date())
+  const planParsed = parseStartYm(form.starting_month)
+  if (!planParsed) {
+    return { ...empty, error: 'Please select a valid starting month.' }
+  }
+  const planStart = startOfLocalDay(new Date(planParsed.y, planParsed.m0, 1))
+  const filterMinMs = Math.max(planStart.getTime(), todayStart.getTime())
+
+  const allPc = listPaycheckDatesFromPlanStart(form.starting_month, 3200)
+  let pcDates = allPc.filter((dt) => startOfLocalDay(dt).getTime() >= filterMinMs)
+  if (form.push_to_next_paycheck && pcDates.length > 0) {
+    pcDates = pcDates.slice(1)
+  }
+  if (pcDates.length === 0) {
+    return {
+      ...empty,
+      error: 'No paycheck dates on or after today for the selected starting month.',
+    }
+  }
+
+  let lastMinExclusive = addDays(todayStart, -1)
+  let extraMonthly = 0
+  const schedules = loans.map(() => [])
+  const payoffLeftover = loans.map(() => null)
+  const balanceAfterSpill = loans.map(() => null)
+
+  const getAdjustAdd = (index, isFirst) => {
+    const extra = extrasForId(extrasById, loans[index].id)
+    const a1 = Number(extra.adjust_disposable_per_paycheck1)
+    const a15 = Number(extra.adjust_disposable_per_paycheck15)
+    const v1 = Number.isFinite(a1) ? a1 : 0
+    const v15 = Number.isFinite(a15) ? a15 : 0
+    return isFirst ? v1 : v15
+  }
+
+  const addFreedMonthly = (index, principalPaid) => {
+    extraMonthly = roundMoney(
+      extraMonthly +
+        minPaymentFreedMonthly(
+          principalPaid,
+          extrasForId(extrasById, loans[index].id).minimum_payment_percent
+        )
+    )
+  }
+
+  const maxPaychecks = 1200
+  for (let pi = 0; pi < maxPaychecks; pi++) {
+    const pcDate = pcDates[pi]
+    if (!pcDate) break
+    if (!bals.some((b) => b > 0)) break
+
+    let activeIndex = -1
+    for (let j = 0; j < bals.length; j++) {
+      if (bals[j] > 0) {
+        activeIndex = j
+        break
+      }
+    }
+    if (activeIndex < 0) break
+
+    applyMinPrincipalAccrualsInWindow(bals, loansCfg, lastMinExclusive, pcDate)
+    lastMinExclusive = startOfLocalDay(pcDate)
+
+    const isFirst = pcDate.getDate() === 1
+    const basePool = isFirst ? base1 : base15
+    const adjAdd = getAdjustAdd(activeIndex, isFirst)
+    let pool = roundMoney(paycheckDisposableWithSnowball(basePool, extraMonthly) + adjAdd)
+
+    if (form.push_to_next_paycheck) {
+      if (pi === 0) {
+        const alreadySpent2 = Number(form.already_spent_on_second_paycheck)
+        if (Number.isFinite(alreadySpent2) && alreadySpent2 > 0) {
+          pool = roundMoney(Math.max(0, pool - alreadySpent2))
+        }
+      }
+    } else if (pi === 0) {
+      const alreadySpent = Number(form.already_spent_on_first_paycheck)
+      if (Number.isFinite(alreadySpent) && alreadySpent > 0) {
+        pool = roundMoney(Math.max(0, pool - alreadySpent))
+      }
+    } else if (pi === 1) {
+      const alreadySpent2 = Number(form.already_spent_on_second_paycheck)
+      if (Number.isFinite(alreadySpent2) && alreadySpent2 > 0) {
+        pool = roundMoney(Math.max(0, pool - alreadySpent2))
+      }
+    }
+
+    const dateLabel = formatPaycheckDateLabel(pcDate)
+    const day = pcDate.getDate()
+    const dateShort = pcDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    const applied = appliedPrincipalThisPaycheck(
+      bals[activeIndex],
+      pool,
+      loans[activeIndex].amount_to_principal
+    )
+    bals[activeIndex] = roundMoney(bals[activeIndex] - applied)
+    addFreedMonthly(activeIndex, applied)
+
+    if (bals[activeIndex] <= 0) {
+      bals[activeIndex] = 0
+      const spill = roundMoney(pool - applied)
+      payoffLeftover[activeIndex] = spill
+      const balsBeforeSpill = bals.slice()
+      const spilled = cascadeSpillFromIndex(bals, activeIndex + 1, spill)
+      Object.keys(spilled.afterSpill).forEach((key) => {
+        balanceAfterSpill[Number(key)] = spilled.afterSpill[key]
+      })
+      Object.keys(spilled.leftovers).forEach((key) => {
+        payoffLeftover[Number(key)] = spilled.leftovers[key]
+      })
+      for (let j = 0; j < bals.length; j++) {
+        const spilledOnto = roundMoney(balsBeforeSpill[j] - bals[j])
+        if (spilledOnto > 0) addFreedMonthly(j, spilledOnto)
+      }
+    }
+
+    const remainingDebt = roundMoney(bals.reduce((sum, balance) => sum + Math.max(0, balance), 0))
+    schedules[activeIndex].push({
+      date: pcDate,
+      dateLabel,
+      day,
+      dateShort,
+      disposableApplied: pool,
+      runningTotal: bals[activeIndex],
+      towardOriginalPercent: towardOriginalBalancePercent(
+        bals[activeIndex],
+        loans[activeIndex].original_debt_owed
+      ),
+      debtFreePercent: debtFreeProgressPercent(remainingDebt, form.original_debt_goal),
+    })
+  }
+
+  let error = ''
+  if (bals.some((b) => b > 0)) {
+    error = 'Schedule stopped after 1200 paychecks (or ran out of dated paychecks); check your amounts.'
+  }
+
+  const results = loans.map((loan, index) => ({
+    id: loan.id,
+    name: loan.title,
+    schedule: schedules[index],
+    payoffLeftover: error ? null : payoffLeftover[index],
+    balanceAfterSpill: error ? null : balanceAfterSpill[index],
+    minimum_payment_percent: extrasForId(extrasById, loan.id).minimum_payment_percent,
+  }))
+
+  const bars = results
+    .map((row) => {
+      if (!row.schedule.length) return null
+      const start = row.schedule[0].date
+      const end = row.schedule[row.schedule.length - 1].date
+      return {
+        id: row.id,
+        title: row.name,
+        start,
+        end,
+        monthsLeft: Math.round((row.schedule.length / 2) * 10) / 10,
+      }
+    })
+    .filter(Boolean)
+
+  return { error, results, bars }
+}

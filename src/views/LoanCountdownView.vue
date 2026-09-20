@@ -1,27 +1,16 @@
 <script setup>
 import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import api from '@/api/client'
+import LoanPayoffGantt from '@/components/LoanPayoffGantt.vue'
 import {
   LOAN_COUNTDOWN_STORAGE_KEY,
-  addDays,
-  applyMinPrincipalAccrualsInWindow,
-  appliedPrincipalThisPaycheck,
-  cascadeSpillFromIndex,
-  debtFreeProgressPercent,
   defaultLoanFormState,
   emptyLoanExtras,
   fifteenthRunningTotalsText,
   formatMoney,
-  formatPaycheckDateLabel,
-  listPaycheckDatesFromPlanStart,
   loadSavedFormInto,
-  minPaymentFreedMonthly,
-  parseStartYm,
-  paycheckDisposableWithSnowball,
-  roundMoney,
-  startOfLocalDay,
+  simulateLoanCountdown,
   startingMonthOptions,
-  towardOriginalBalancePercent,
 } from '@/utils/loanCountdown'
 
 const form = reactive(defaultLoanFormState())
@@ -68,6 +57,8 @@ const allDebtGoalLabel = computed(() => {
 const hasResults = computed(
   () => Boolean(countdownValidationError.value) || loanResults.value.some((row) => row.schedule.length > 0)
 )
+
+const countdownSimulation = computed(() => simulateLoanCountdown(cuLoans.value, form, loanExtras))
 
 function extrasFor(loanId) {
   const key = String(loanId)
@@ -141,181 +132,9 @@ async function loadCuLoans() {
 
 function calculateLoanCountdown() {
   persistLoanForm()
-  countdownValidationError.value = ''
-  resetResultState()
-
-  const loans = cuLoans.value
-  const base1 = Number(form.disposable_per_paycheck1)
-  const base15 = Number(form.disposable_per_paycheck15)
-  if (!form.starting_month) {
-    countdownValidationError.value = 'Please select a starting month.'
-    return
-  }
-  if (!Number.isFinite(base1) || base1 <= 0 || !Number.isFinite(base15) || base15 <= 0) {
-    countdownValidationError.value =
-      'Please enter disposable for both the 1st and 15th paychecks (each must be greater than zero).'
-    return
-  }
-  if (!loans.length) {
-    countdownValidationError.value = 'No Credit Utilization loans with debt owed greater than 0.'
-    return
-  }
-
-  const bals = loans.map((loan) => roundMoney(loan.debt_owed) || 0)
-  const loansCfg = loans.map((loan) => {
-    const extra = extrasFor(loan.id)
-    return {
-      dom: Number(extra.day_of_month),
-      minP: Number(loan.amount_to_principal),
-    }
-  })
-
-  const todayStart = startOfLocalDay(new Date())
-  const planParsed = parseStartYm(form.starting_month)
-  if (!planParsed) {
-    countdownValidationError.value = 'Please select a valid starting month.'
-    return
-  }
-  const planStart = startOfLocalDay(new Date(planParsed.y, planParsed.m0, 1))
-  const filterMinMs = Math.max(planStart.getTime(), todayStart.getTime())
-
-  const allPc = listPaycheckDatesFromPlanStart(form.starting_month, 3200)
-  let pcDates = allPc.filter((dt) => startOfLocalDay(dt).getTime() >= filterMinMs)
-  if (form.push_to_next_paycheck && pcDates.length > 0) {
-    pcDates = pcDates.slice(1)
-  }
-  if (pcDates.length === 0) {
-    countdownValidationError.value =
-      'No paycheck dates on or after today for the selected starting month.'
-    return
-  }
-
-  let lastMinExclusive = addDays(todayStart, -1)
-  let extraMonthly = 0
-  const schedules = loans.map(() => [])
-  const payoffLeftover = loans.map(() => null)
-  const balanceAfterSpill = loans.map(() => null)
-
-  const getAdjustAdd = (index, isFirst) => {
-    const extra = extrasFor(loans[index].id)
-    const a1 = Number(extra.adjust_disposable_per_paycheck1)
-    const a15 = Number(extra.adjust_disposable_per_paycheck15)
-    const v1 = Number.isFinite(a1) ? a1 : 0
-    const v15 = Number.isFinite(a15) ? a15 : 0
-    return isFirst ? v1 : v15
-  }
-
-  const addFreedMonthly = (index, principalPaid) => {
-    extraMonthly = roundMoney(
-      extraMonthly +
-        minPaymentFreedMonthly(principalPaid, extrasFor(loans[index].id).minimum_payment_percent)
-    )
-  }
-
-  const maxPaychecks = 1200
-  for (let pi = 0; pi < maxPaychecks; pi++) {
-    const pcDate = pcDates[pi]
-    if (!pcDate) break
-    if (!bals.some((b) => b > 0)) break
-
-    let activeIndex = -1
-    for (let j = 0; j < bals.length; j++) {
-      if (bals[j] > 0) {
-        activeIndex = j
-        break
-      }
-    }
-    if (activeIndex < 0) break
-
-    applyMinPrincipalAccrualsInWindow(bals, loansCfg, lastMinExclusive, pcDate)
-    lastMinExclusive = startOfLocalDay(pcDate)
-
-    const isFirst = pcDate.getDate() === 1
-    const basePool = isFirst ? base1 : base15
-    const adjAdd = getAdjustAdd(activeIndex, isFirst)
-    let pool = roundMoney(paycheckDisposableWithSnowball(basePool, extraMonthly) + adjAdd)
-
-    if (form.push_to_next_paycheck) {
-      if (pi === 0) {
-        const alreadySpent2 = Number(form.already_spent_on_second_paycheck)
-        if (Number.isFinite(alreadySpent2) && alreadySpent2 > 0) {
-          pool = roundMoney(Math.max(0, pool - alreadySpent2))
-        }
-      }
-    } else if (pi === 0) {
-      const alreadySpent = Number(form.already_spent_on_first_paycheck)
-      if (Number.isFinite(alreadySpent) && alreadySpent > 0) {
-        pool = roundMoney(Math.max(0, pool - alreadySpent))
-      }
-    } else if (pi === 1) {
-      const alreadySpent2 = Number(form.already_spent_on_second_paycheck)
-      if (Number.isFinite(alreadySpent2) && alreadySpent2 > 0) {
-        pool = roundMoney(Math.max(0, pool - alreadySpent2))
-      }
-    }
-
-    const dateLabel = formatPaycheckDateLabel(pcDate)
-    const day = pcDate.getDate()
-    const dateShort = pcDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
-    const applied = appliedPrincipalThisPaycheck(
-      bals[activeIndex],
-      pool,
-      loans[activeIndex].amount_to_principal
-    )
-    bals[activeIndex] = roundMoney(bals[activeIndex] - applied)
-    addFreedMonthly(activeIndex, applied)
-
-    if (bals[activeIndex] <= 0) {
-      bals[activeIndex] = 0
-      const spill = roundMoney(pool - applied)
-      payoffLeftover[activeIndex] = spill
-      const balsBeforeSpill = bals.slice()
-      const spilled = cascadeSpillFromIndex(bals, activeIndex + 1, spill)
-      Object.keys(spilled.afterSpill).forEach((key) => {
-        balanceAfterSpill[Number(key)] = spilled.afterSpill[key]
-      })
-      Object.keys(spilled.leftovers).forEach((key) => {
-        payoffLeftover[Number(key)] = spilled.leftovers[key]
-      })
-      for (let j = 0; j < bals.length; j++) {
-        const spilledOnto = roundMoney(balsBeforeSpill[j] - bals[j])
-        if (spilledOnto > 0) addFreedMonthly(j, spilledOnto)
-      }
-    }
-
-    const remainingDebt = roundMoney(bals.reduce((sum, balance) => sum + Math.max(0, balance), 0))
-    schedules[activeIndex].push({
-      dateLabel,
-      day,
-      dateShort,
-      disposableApplied: pool,
-      runningTotal: bals[activeIndex],
-      towardOriginalPercent: towardOriginalBalancePercent(
-        bals[activeIndex],
-        loans[activeIndex].original_debt_owed
-      ),
-      debtFreePercent: debtFreeProgressPercent(remainingDebt, form.original_debt_goal),
-    })
-  }
-
-  loanResults.value = loans.map((loan, index) => ({
-    id: loan.id,
-    name: loan.title,
-    schedule: schedules[index],
-    payoffLeftover: payoffLeftover[index],
-    balanceAfterSpill: balanceAfterSpill[index],
-    minimum_payment_percent: extrasFor(loan.id).minimum_payment_percent,
-  }))
-
-  if (bals.some((b) => b > 0)) {
-    countdownValidationError.value =
-      'Schedule stopped after 1200 paychecks (or ran out of dated paychecks); check your amounts.'
-    loanResults.value = loanResults.value.map((row) => ({
-      ...row,
-      payoffLeftover: null,
-      balanceAfterSpill: null,
-    }))
-  }
+  const sim = simulateLoanCountdown(cuLoans.value, form, loanExtras)
+  countdownValidationError.value = sim.error
+  loanResults.value = sim.results
 }
 
 function scrollToResults() {
@@ -626,5 +445,11 @@ onMounted(async () => {
         </button>
       </div>
     </div>
+
+    <LoanPayoffGantt
+      :bars="countdownSimulation.bars"
+      :message="countdownSimulation.error"
+      caption="Same snowball as the tables above: 1st/15th disposable, extras, and starting month."
+    />
   </div>
 </template>
