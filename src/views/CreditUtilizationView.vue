@@ -87,6 +87,119 @@ const remainingLoansText = computed(() => {
     .join('\n')
 })
 
+// Same default disposable as the Credit Utilization list API.
+const DEFAULT_MONTHLY_DISPOSABLE = 3000 + 400 * 2 - 180 * 2
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+const GANTT_MONTH_PX = 44
+const GANTT_COLORS = [
+  '#2563eb',
+  '#16a34a',
+  '#d97706',
+  '#dc2626',
+  '#7c3aed',
+  '#0891b2',
+  '#db2777',
+  '#4f46e5',
+  '#059669',
+  '#ea580c',
+]
+
+function startOfCurrentMonth() {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth(), 1)
+}
+
+function addMonthsFractional(date, months) {
+  const n = Number(months)
+  if (!Number.isFinite(n) || n <= 0) return new Date(date.getTime())
+  const whole = Math.floor(n)
+  const frac = n - whole
+  const result = new Date(date.getFullYear(), date.getMonth() + whole, date.getDate())
+  result.setDate(result.getDate() + Math.round(frac * 30))
+  return result
+}
+
+function compareByMilestone(a, b) {
+  const aOrder = Number(a.milestone_order) > 0 ? Number(a.milestone_order) : 9999
+  const bOrder = Number(b.milestone_order) > 0 ? Number(b.milestone_order) : 9999
+  if (aOrder !== bOrder) return aOrder - bOrder
+  return Number(a.id) - Number(b.id)
+}
+
+const payoffGantt = computed(() => {
+  const ordered = loans.value.filter((loan) => Number(loan.debt_owed) > 0).slice().sort(compareByMilestone)
+  if (!ordered.length) {
+    return { bars: [], months: [], years: [], timelineWidth: 0 }
+  }
+
+  let minPaymentAccum = 0
+  let adjustAccum = 0
+  let cursor = startOfCurrentMonth()
+  const bars = []
+
+  ordered.forEach((loan, index) => {
+    const debt = Number(loan.debt_owed) || 0
+    const principal = Number(loan.amount_to_principal) || 0
+    const minPayment = Number(loan.min_payment) || 0
+    const adjust = Number(loan.adjust_disposable_amount) || 0
+    adjustAccum += adjust
+    const monthlyPay = DEFAULT_MONTHLY_DISPOSABLE + minPaymentAccum + principal + adjustAccum
+    const monthsLeft = monthlyPay > 0 ? debt / monthlyPay : 0
+    const start = new Date(cursor.getTime())
+    const end = addMonthsFractional(start, monthsLeft)
+    bars.push({
+      id: loan.id,
+      title: loan.title,
+      start,
+      end,
+      monthsLeft: Math.round(monthsLeft * 10) / 10,
+      color: GANTT_COLORS[index % GANTT_COLORS.length],
+    })
+    minPaymentAccum += minPayment
+    cursor = new Date(end.getTime())
+    cursor.setDate(cursor.getDate() + 1)
+  })
+
+  const rangeStart = startOfCurrentMonth()
+  const lastEnd = bars[bars.length - 1].end
+  const rangeEnd = new Date(lastEnd.getFullYear(), lastEnd.getMonth() + 1, 1)
+  const months = []
+  const monthCursor = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1)
+  while (monthCursor < rangeEnd) {
+    months.push({
+      year: monthCursor.getFullYear(),
+      month: monthCursor.getMonth(),
+      label: MONTH_LABELS[monthCursor.getMonth()],
+      isYearStart: monthCursor.getMonth() === 0,
+    })
+    monthCursor.setMonth(monthCursor.getMonth() + 1)
+  }
+
+  const years = []
+  months.forEach((month) => {
+    const last = years[years.length - 1]
+    if (last && last.year === month.year) last.span += 1
+    else years.push({ year: month.year, span: 1 })
+  })
+
+  const rangeStartMs = rangeStart.getTime()
+  const rangeMs = Math.max(rangeEnd.getTime() - rangeStartMs, 1)
+  bars.forEach((bar) => {
+    const startMs = Math.max(bar.start.getTime(), rangeStartMs)
+    const endMs = Math.max(bar.end.getTime(), startMs + 1)
+    bar.leftPct = ((startMs - rangeStartMs) / rangeMs) * 100
+    bar.widthPct = Math.max(((endMs - startMs) / rangeMs) * 100, 1.5)
+    bar.endLabel = `${MONTH_LABELS[bar.end.getMonth()]} ${bar.end.getFullYear()}`
+  })
+
+  return {
+    bars,
+    months,
+    years,
+    timelineWidth: months.length * GANTT_MONTH_PX,
+  }
+})
+
 function money(value) {
   const n = Number(value)
   if (Number.isNaN(n)) return '$0.00'
@@ -534,6 +647,77 @@ onMounted(async () => {
               </tr>
             </tbody>
           </table>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="payoffGantt.bars.length" class="card">
+      <div class="card-body space-y-3">
+        <div>
+          <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Loan Payoff Timeline</h2>
+          <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
+            Snowball in milestone order. Each bar is how long that loan takes after the previous one is paid.
+          </p>
+        </div>
+        <div class="overflow-x-auto">
+          <div class="min-w-max">
+            <div class="flex">
+              <div class="w-36 shrink-0"></div>
+              <div
+                v-for="(year, yearIndex) in payoffGantt.years"
+                :key="'gantt-year-' + year.year"
+                class="border-b border-gray-200 text-center text-xs font-semibold text-gray-900 dark:border-gray-700 dark:text-white"
+                :class="yearIndex % 2 === 0 ? 'bg-gray-50 dark:bg-gray-800' : 'bg-white dark:bg-gray-900'"
+                :style="{ width: year.span * GANTT_MONTH_PX + 'px' }"
+              >
+                {{ year.year }}
+              </div>
+            </div>
+            <div class="flex">
+              <div class="w-36 shrink-0"></div>
+              <div
+                v-for="(month, monthIndex) in payoffGantt.months"
+                :key="'gantt-month-' + monthIndex"
+                class="border-b border-gray-100 py-1 text-center text-[10px] text-gray-500 dark:border-gray-800 dark:text-gray-400"
+                :class="month.isYearStart ? 'border-l border-gray-300 dark:border-gray-600' : ''"
+                :style="{ width: GANTT_MONTH_PX + 'px' }"
+              >
+                {{ month.label }}
+              </div>
+            </div>
+            <div
+              v-for="bar in payoffGantt.bars"
+              :key="'gantt-bar-' + bar.id"
+              class="flex items-center"
+            >
+              <div
+                class="w-36 shrink-0 truncate pr-2 text-sm font-medium text-gray-900 dark:text-white"
+                :title="bar.title"
+              >
+                {{ bar.title }}
+              </div>
+              <div class="relative h-8" :style="{ width: payoffGantt.timelineWidth + 'px' }">
+                <div
+                  v-for="(month, monthIndex) in payoffGantt.months"
+                  :key="'gantt-grid-' + bar.id + '-' + monthIndex"
+                  class="absolute inset-y-0 border-r border-gray-100 dark:border-gray-800"
+                  :class="month.isYearStart ? 'border-l border-gray-300 dark:border-gray-600' : ''"
+                  :style="{ left: monthIndex * GANTT_MONTH_PX + 'px', width: GANTT_MONTH_PX + 'px' }"
+                ></div>
+                <div
+                  class="absolute top-1 flex h-6 items-center overflow-hidden rounded px-1.5 text-[10px] font-medium text-white"
+                  :style="{
+                    left: bar.leftPct + '%',
+                    width: bar.widthPct + '%',
+                    backgroundColor: bar.color,
+                  }"
+                  :title="`${bar.title}: ${bar.monthsLeft} months, paid off ${bar.endLabel}`"
+                >
+                  <span class="truncate">{{ bar.monthsLeft }} mo · {{ bar.endLabel }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
