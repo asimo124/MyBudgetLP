@@ -3,16 +3,28 @@ import { computed, onMounted, reactive, ref, watch } from 'vue'
 import api from '@/api/client'
 
 const FILTER_STORAGE_KEY = 'apple_calendar_events_filters'
+const CHICAGO_TZ = 'America/Chicago'
+
+function todayYmd() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: CHICAGO_TZ,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date())
+}
 
 function getDefaultFilters() {
   return {
     keyword_title: '',
     keyword_body: '',
-    start_date: '',
+    keyword_location: '',
+    calendar_name: '',
+    start_date: todayYmd(),
     end_date: '',
-    sort_by: 'start_date',
-    sort_dir: 'DESC',
-    deleted: false,
+    sort_by: 'start_utc',
+    sort_dir: 'ASC',
+    show_cancelled: false,
   }
 }
 
@@ -30,9 +42,10 @@ function loadStoredFilters() {
 
 const stored = loadStoredFilters()
 const defaults = getDefaultFilters()
+const allowedSortBy = ['start_utc', 'end_utc', 'summary', 'calendar_name', 'location', 'status', 'last_modified_utc']
 
 const events = ref([])
-const selectedIds = ref([])
+const calendars = ref([])
 const viewingEvent = ref(null)
 const copyStatus = ref('')
 let copyStatusTimer = null
@@ -42,17 +55,19 @@ const filters = reactive({
     stored && typeof stored.keyword_title === 'string' ? stored.keyword_title : defaults.keyword_title,
   keyword_body:
     stored && typeof stored.keyword_body === 'string' ? stored.keyword_body : defaults.keyword_body,
+  keyword_location:
+    stored && typeof stored.keyword_location === 'string' ? stored.keyword_location : defaults.keyword_location,
+  calendar_name:
+    stored && typeof stored.calendar_name === 'string' ? stored.calendar_name : defaults.calendar_name,
   start_date: stored && typeof stored.start_date === 'string' ? stored.start_date : defaults.start_date,
   end_date: stored && typeof stored.end_date === 'string' ? stored.end_date : defaults.end_date,
-  sort_by:
-    stored && ['start_date', 'end_date', 'title', 'calendar_name', 'location'].includes(stored.sort_by)
-      ? stored.sort_by
-      : defaults.sort_by,
+  sort_by: stored && allowedSortBy.includes(stored.sort_by) ? stored.sort_by : defaults.sort_by,
   sort_dir:
     stored && (stored.sort_dir === 'ASC' || stored.sort_dir === 'DESC')
       ? stored.sort_dir
       : defaults.sort_dir,
-  deleted: stored && typeof stored.deleted === 'boolean' ? stored.deleted : defaults.deleted,
+  show_cancelled:
+    stored && typeof stored.show_cancelled === 'boolean' ? stored.show_cancelled : defaults.show_cancelled,
 })
 
 const page = ref(1)
@@ -60,17 +75,7 @@ const perPage = ref(20)
 const total = ref(0)
 const totalPages = ref(1)
 const loading = ref(false)
-const deleting = ref(false)
-const uploading = ref(false)
-const exporting = ref(false)
 const error = ref('')
-const message = ref('')
-const uploadFile = ref(null)
-
-const allSelected = computed(
-  () => events.value.length > 0 && events.value.every((n) => selectedIds.value.includes(n.id))
-)
-const someSelected = computed(() => selectedIds.value.length > 0 && !allSelected.value)
 
 const pageNumbers = computed(() => {
   const totalP = totalPages.value
@@ -120,9 +125,11 @@ async function loadEvents() {
     }
     if (filters.keyword_title) params.keyword_title = filters.keyword_title
     if (filters.keyword_body) params.keyword_body = filters.keyword_body
+    if (filters.keyword_location) params.keyword_location = filters.keyword_location
+    if (filters.calendar_name) params.calendar_name = filters.calendar_name
     if (filters.start_date) params.start_date = filters.start_date
     if (filters.end_date) params.end_date = filters.end_date
-    if (filters.deleted) params.deleted = '1'
+    if (filters.show_cancelled) params.show_cancelled = '1'
 
     const { data } = await api.get('/api/loadAppleCalendarEvents.php', { params })
     if (data?.error) {
@@ -133,15 +140,17 @@ async function loadEvents() {
       return
     }
 
-    events.value = (data.items || []).map((n) => ({
-      ...n,
-      id: parseInt(n.id, 10),
+    events.value = (data.items || []).map((item) => ({
+      ...item,
+      id: parseInt(item.id, 10),
+      all_day: Number(item.all_day) === 1,
+      is_recurring: Number(item.is_recurring) === 1,
     }))
+    calendars.value = data.calendars || []
     total.value = data.total || 0
     page.value = data.page || 1
     perPage.value = data.per_page || perPage.value
     totalPages.value = data.total_pages || 1
-    selectedIds.value = []
     viewingEvent.value = null
   } catch (err) {
     error.value = err.response?.data?.message || err.response?.data?.error || 'Failed to load events.'
@@ -152,13 +161,12 @@ async function loadEvents() {
 
 function applyFilters() {
   page.value = 1
-  message.value = ''
   persistFilters()
   loadEvents()
 }
 
 function clearKeyword(field) {
-  if (field !== 'keyword_title' && field !== 'keyword_body') return
+  if (!['keyword_title', 'keyword_body', 'keyword_location'].includes(field)) return
   filters[field] = ''
   applyFilters()
 }
@@ -172,7 +180,6 @@ function clearDate(field) {
 function clearFilters() {
   Object.assign(filters, getDefaultFilters())
   page.value = 1
-  message.value = ''
   persistFilters()
   loadEvents()
 }
@@ -186,14 +193,6 @@ function goToPage(p) {
   if (p < 1 || p > totalPages.value) return
   page.value = p
   loadEvents()
-}
-
-function toggleSelectAll(event) {
-  if (event.target.checked) {
-    selectedIds.value = events.value.map((n) => n.id)
-  } else {
-    selectedIds.value = []
-  }
 }
 
 function openEventModal(item) {
@@ -240,91 +239,29 @@ async function copyEventBody() {
   }
 }
 
-function formatDate(value) {
+function formatEventWhen(value, allDay = false) {
   if (!value) return '—'
-  const match = String(value).match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/)
-  if (!match) return String(value)
-  const datePart = `${match[2]}/${match[3]}/${match[1]}`
-  if (!match[4]) return datePart
-  return `${datePart} ${match[4]}:${match[5]}`
-}
-
-async function deleteSelected() {
-  if (!selectedIds.value.length) return
-  deleting.value = true
-  error.value = ''
-  message.value = ''
-  try {
-    const { data } = await api.post('/api/deleteAppleCalendarEvents.php', {
-      ids: selectedIds.value,
-    })
-    if (data?.success) {
-      message.value =
-        data.message ||
-        `Marked ${data.deleted_count || selectedIds.value.length} event(s) for deletion.`
-      await loadEvents()
-    } else {
-      error.value = data?.error || data?.message || 'Delete failed.'
-    }
-  } catch (err) {
-    error.value = err.response?.data?.message || err.response?.data?.error || 'Failed to delete events.'
-  } finally {
-    deleting.value = false
+  const raw = String(value)
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2}))?/)
+  if (allDay) {
+    if (!match) return raw
+    return `${match[2]}/${match[3]}/${match[1]}`
   }
-}
-
-function onUploadFileChange(event) {
-  uploadFile.value = event.target.files?.[0] || null
-}
-
-async function submitUpload() {
-  if (!uploadFile.value) {
-    error.value = 'Please select a CSV file.'
-    return
+  const iso = raw.includes('T') ? raw : raw.replace(' ', 'T')
+  const date = new Date(iso.endsWith('Z') ? iso : `${iso}Z`)
+  if (Number.isNaN(date.getTime())) {
+    if (!match) return raw
+    if (!match[4]) return `${match[2]}/${match[3]}/${match[1]}`
+    return `${match[2]}/${match[3]}/${match[1]} ${match[4]}:${match[5]}`
   }
-  uploading.value = true
-  error.value = ''
-  message.value = ''
-  try {
-    const formData = new FormData()
-    formData.append('apple_calendar_file', uploadFile.value)
-    const { data } = await api.post('/api/apple_calendar/upload.php', formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-    })
-    message.value = data.message || 'Apple Calendar events imported successfully.'
-    uploadFile.value = null
-    const input = document.getElementById('apple_calendar_file')
-    if (input) input.value = ''
-    page.value = 1
-    await loadEvents()
-  } catch (err) {
-    error.value = err.response?.data?.message || 'Upload failed.'
-  } finally {
-    uploading.value = false
-  }
-}
-
-async function exportCsv() {
-  exporting.value = true
-  error.value = ''
-  try {
-    const { data } = await api.post(
-      '/api/apple_calendar/export.php',
-      {},
-      { responseType: 'blob' }
-    )
-    const url = URL.createObjectURL(data)
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `apple_calendar_events_to_delete_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`
-    link.click()
-    URL.revokeObjectURL(url)
-    message.value = 'CSV downloaded.'
-  } catch (err) {
-    error.value = err.response?.data?.message || 'Export failed.'
-  } finally {
-    exporting.value = false
-  }
+  return new Intl.DateTimeFormat('en-US', {
+    timeZone: CHICAGO_TZ,
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(date)
 }
 
 onMounted(() => {
@@ -337,16 +274,10 @@ onMounted(() => {
     <div>
       <h1 class="text-2xl font-semibold text-gray-900 dark:text-white">Apple Calendar Events</h1>
       <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-        Upload, search, and mark Apple Calendar events for deletion.
+        Search and browse iCloud calendar events synced into MySQL.
       </p>
     </div>
 
-    <div
-      v-if="message"
-      class="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800 dark:border-green-800 dark:bg-green-900/20 dark:text-green-300"
-    >
-      {{ message }}
-    </div>
     <div
       v-if="error"
       class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800 dark:border-red-800 dark:bg-red-900/20 dark:text-red-300"
@@ -354,35 +285,9 @@ onMounted(() => {
       {{ error }}
     </div>
 
-    <div class="card">
-      <div class="card-body space-y-4">
-        <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Upload</h2>
-        <div>
-          <label for="apple_calendar_file" class="mb-1 block text-sm text-gray-600 dark:text-gray-400">
-            Upload Apple Calendar Events
-          </label>
-          <input
-            id="apple_calendar_file"
-            type="file"
-            accept=".csv"
-            class="form-input w-full max-w-md"
-            @change="onUploadFileChange"
-          />
-        </div>
-        <button
-          type="button"
-          class="btn bg-primary-500 text-white hover:bg-primary-600 disabled:opacity-50"
-          :disabled="uploading"
-          @click="submitUpload"
-        >
-          {{ uploading ? 'Uploading…' : 'Upload File' }}
-        </button>
-      </div>
-    </div>
-
     <div>
       <h2 class="mb-4 text-lg font-semibold text-gray-900 dark:text-white">Events</h2>
-      <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <div>
           <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Title keyword</label>
           <div class="relative">
@@ -426,6 +331,34 @@ onMounted(() => {
           </div>
         </div>
         <div>
+          <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Location</label>
+          <div class="relative">
+            <input
+              v-model="filters.keyword_location"
+              type="text"
+              placeholder="Search location..."
+              class="form-input w-full pr-9"
+              @keyup.enter="applyFilters"
+            />
+            <button
+              v-if="filters.keyword_location"
+              type="button"
+              class="absolute inset-y-0 right-0 px-3 text-gray-400 hover:text-gray-700"
+              aria-label="Clear location"
+              @click="clearKeyword('keyword_location')"
+            >
+              ×
+            </button>
+          </div>
+        </div>
+        <div>
+          <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Calendar</label>
+          <select v-model="filters.calendar_name" class="form-input w-full" @change="applyFilters">
+            <option value="">All calendars</option>
+            <option v-for="name in calendars" :key="name" :value="name">{{ name }}</option>
+          </select>
+        </div>
+        <div>
           <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Start from</label>
           <div class="relative">
             <input v-model="filters.start_date" type="date" class="form-input w-full pr-9" />
@@ -458,18 +391,20 @@ onMounted(() => {
         <div>
           <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Sort by</label>
           <select v-model="filters.sort_by" class="form-input w-full" @change="applyFilters">
-            <option value="start_date">Start date</option>
-            <option value="end_date">End date</option>
-            <option value="title">Title</option>
+            <option value="start_utc">Start date</option>
+            <option value="end_utc">End date</option>
+            <option value="summary">Title</option>
             <option value="calendar_name">Calendar</option>
             <option value="location">Location</option>
+            <option value="status">Status</option>
+            <option value="last_modified_utc">Last modified</option>
           </select>
         </div>
         <div>
           <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Sort direction</label>
           <select v-model="filters.sort_dir" class="form-input w-full" @change="applyFilters">
-            <option value="DESC">DESC</option>
             <option value="ASC">ASC</option>
+            <option value="DESC">DESC</option>
           </select>
         </div>
       </div>
@@ -488,30 +423,14 @@ onMounted(() => {
       >
         Clear
       </button>
-      <button
-        type="button"
-        class="btn bg-red-500 text-white hover:bg-red-600 disabled:opacity-50"
-        :disabled="selectedIds.length === 0 || deleting"
-        @click="deleteSelected"
-      >
-        {{ deleting ? 'Deleting…' : `Delete Selected (${selectedIds.length})` }}
-      </button>
-      <button
-        type="button"
-        class="btn bg-success-600 text-white hover:bg-success-700 disabled:opacity-50"
-        :disabled="exporting"
-        @click="exportCsv"
-      >
-        {{ exporting ? 'Exporting…' : 'Export to CSV' }}
-      </button>
       <label class="inline-flex cursor-pointer select-none items-center gap-2 text-sm text-gray-700 dark:text-gray-300">
         <input
-          v-model="filters.deleted"
+          v-model="filters.show_cancelled"
           type="checkbox"
           class="rounded border-gray-300"
           @change="applyFilters"
         />
-        Not Deleted
+        Show cancelled
       </label>
       <div class="ml-auto flex items-center gap-2">
         <label class="text-sm text-gray-600 dark:text-gray-400">Per page</label>
@@ -530,36 +449,58 @@ onMounted(() => {
         <table class="min-w-full divide-y divide-gray-200 text-sm dark:divide-gray-700">
           <thead class="bg-gray-50 dark:bg-gray-800">
             <tr>
-              <th class="px-3 py-3 text-left">
-                <input
-                  type="checkbox"
-                  :checked="allSelected"
-                  :indeterminate="someSelected"
-                  @change="toggleSelectAll"
-                />
-              </th>
               <th class="px-3 py-3 text-left text-xs font-medium uppercase text-gray-500">Title</th>
               <th class="px-3 py-3 text-left text-xs font-medium uppercase text-gray-500">Calendar</th>
               <th class="px-3 py-3 text-left text-xs font-medium uppercase text-gray-500">Start</th>
+              <th class="px-3 py-3 text-left text-xs font-medium uppercase text-gray-500">End</th>
+              <th class="px-3 py-3 text-left text-xs font-medium uppercase text-gray-500">Location</th>
               <th class="px-3 py-3 text-left text-xs font-medium uppercase text-gray-500">Description</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-100 dark:divide-gray-700">
             <tr v-if="!loading && events.length === 0">
-              <td colspan="5" class="px-3 py-6 text-center text-gray-500">No events found.</td>
+              <td colspan="6" class="px-3 py-6 text-center text-gray-500">No events found.</td>
             </tr>
             <tr v-for="item in events" :key="item.id" class="hover:bg-gray-50 dark:hover:bg-gray-800/50">
-              <td class="px-3 py-3 align-top">
-                <input v-model="selectedIds" type="checkbox" :value="item.id" />
-              </td>
               <td class="px-3 py-3 align-top font-medium text-gray-900 dark:text-white">
-                {{ item.title || '(Untitled)' }}
+                <div>{{ item.summary || '(Untitled)' }}</div>
+                <div class="mt-1 flex flex-wrap gap-1">
+                  <span
+                    v-if="item.all_day"
+                    class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                  >
+                    All day
+                  </span>
+                  <span
+                    v-if="item.is_recurring"
+                    class="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-600 dark:bg-gray-700 dark:text-gray-300"
+                  >
+                    Recurring
+                  </span>
+                  <span
+                    v-if="item.status"
+                    class="rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide"
+                    :class="
+                      String(item.status).toUpperCase() === 'CANCELLED'
+                        ? 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
+                        : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300'
+                    "
+                  >
+                    {{ item.status }}
+                  </span>
+                </div>
               </td>
               <td class="px-3 py-3 align-top text-gray-600 dark:text-gray-300">
                 {{ item.calendar_name || '—' }}
               </td>
               <td class="whitespace-nowrap px-3 py-3 align-top text-gray-600 dark:text-gray-300">
-                {{ formatDate(item.start_date) }}
+                {{ formatEventWhen(item.start_utc, item.all_day) }}
+              </td>
+              <td class="whitespace-nowrap px-3 py-3 align-top text-gray-600 dark:text-gray-300">
+                {{ formatEventWhen(item.end_utc, item.all_day) }}
+              </td>
+              <td class="px-3 py-3 align-top text-gray-600 dark:text-gray-300">
+                {{ item.location || '—' }}
               </td>
               <td class="px-3 py-3 align-top text-gray-700 dark:text-gray-300">
                 <div class="note-body-preview" :title="item.description || ''">
@@ -636,10 +577,13 @@ onMounted(() => {
         <div class="flex items-start justify-between gap-4 border-b border-gray-200 px-5 py-4 dark:border-gray-700">
           <div class="pr-4">
             <h2 class="text-xl font-semibold text-gray-900 dark:text-white">
-              {{ viewingEvent.title || '(Untitled)' }}
+              {{ viewingEvent.summary || '(Untitled)' }}
             </h2>
             <p class="mt-1 text-sm text-gray-500 dark:text-gray-400">
-              {{ viewingEvent.calendar_name || '—' }} · {{ formatDate(viewingEvent.start_date) }}
+              {{ viewingEvent.calendar_name || '—' }} ·
+              {{ formatEventWhen(viewingEvent.start_utc, viewingEvent.all_day) }}
+              –
+              {{ formatEventWhen(viewingEvent.end_utc, viewingEvent.all_day) }}
               <span v-if="viewingEvent.location"> · {{ viewingEvent.location }}</span>
             </p>
           </div>
