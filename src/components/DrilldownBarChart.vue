@@ -6,7 +6,7 @@ const props = defineProps({
   categories: { type: Array, default: () => [] },
   series: { type: Array, default: () => [] },
   stacked: { type: Boolean, default: false },
-  height: { type: Number, default: 360 },
+  height: { type: Number, default: 380 },
   drillable: { type: Boolean, default: false },
   // (seriesIndex, dataPointIndex) => string, used for the tooltip row label.
   pointLabel: { type: Function, default: null },
@@ -52,8 +52,8 @@ function buildOptions() {
     theme: { mode: dark ? 'dark' : 'light' },
     plotOptions: {
       bar: {
-        horizontal: true,
-        barHeight: '70%',
+        horizontal: false,
+        columnWidth: '60%',
         borderRadius: 2,
       },
     },
@@ -61,11 +61,22 @@ function buildOptions() {
     // Without this the clicked bar stays dimmed after drilling down.
     states: { active: { filter: { type: 'none' } } },
     grid: { borderColor: dark ? '#374151' : '#e5e7eb' },
+    // Vertical bars: categories run along the x-axis, the measure up the y-axis.
     xaxis: {
       categories: props.categories,
-      labels: { formatter: (value) => currency(value) },
+      labels: {
+        rotate: -45,
+        rotateAlways: props.categories.length > 8,
+        trim: true,
+        maxHeight: 140,
+        hideOverlappingLabels: false,
+        style: { fontSize: '11px' },
+      },
+      tickPlacement: 'on',
     },
-    yaxis: { labels: { maxWidth: 240 } },
+    yaxis: {
+      labels: { formatter: (value) => `$${Math.round(Number(value) || 0)}` },
+    },
     legend: { show: props.stacked, position: 'bottom' },
     tooltip: {
       shared: false,

@@ -8,7 +8,6 @@ import {
   buildOverviewChart,
   buildPeriodSection,
   chartDaysFor,
-  chartHeight,
   currency,
   formatDate,
   groupByPayPeriod,
@@ -522,7 +521,6 @@ onMounted(loadData)
             :categories="section.categories"
             :series="section.series"
             :drillable="section.drillable"
-            :height="chartHeight(section.categories.length)"
             @drill="drillPeriod(section, $event)"
           />
         </div>
@@ -559,7 +557,6 @@ onMounted(loadData)
           :categories="overviewDrilldown.categories"
           :series="overviewDrilldown.series"
           :drillable="overviewDrilldown.drillable"
-          :height="chartHeight(overviewDrilldown.categories.length)"
           @drill="drillOverview"
         />
         <DrilldownBarChart
@@ -569,7 +566,7 @@ onMounted(loadData)
           :categories="overviewRoot.categories"
           :series="overviewRoot.series"
           :point-label="overviewPointLabel"
-          :height="chartHeight(overviewRoot.categories.length)"
+          :height="440"
           @drill="drillOverview"
         />
       </div>

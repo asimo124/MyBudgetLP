@@ -34,11 +34,6 @@ export function todayYmd(now = new Date()) {
   return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`
 }
 
-/** Horizontal bars need vertical room per category or the labels collide. */
-export function chartHeight(categoryCount) {
-  return Math.max(240, categoryCount * 28 + 90)
-}
-
 export function sumAmount(items) {
   return round2(items.reduce((sum, item) => sum + (Number(item.amount) || 0), 0))
 }
