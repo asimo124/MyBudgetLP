@@ -40,6 +40,7 @@ export const navGroups = [
       { name: 'Budget Progress', path: '/budget-progress', icon: 'ph-chart-line-up' },
       // { name: 'Track Progress', path: '/track-progress', icon: 'ph-target' },
       // { name: 'Income Purchases', path: '/income-purchases', icon: 'ph-shopping-cart' },
+      { name: 'Extra Purchases', path: '/extra-purchases', icon: 'ph-shopping-bag' },
       { name: 'Disposable Balancer', path: '/disposable-balancer', icon: 'ph-scales' },
       { name: 'Loan Countdown', path: '/loan-countdown', icon: 'ph-timer' },
       { name: 'Credit Utilization', path: '/credit-utilization', icon: 'ph-credit-card' },

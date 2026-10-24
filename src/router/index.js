@@ -10,6 +10,7 @@ import BillFormView from '@/views/BillFormView.vue'
 import ExpensesView from '@/views/ExpensesView.vue'
 import BudgetProgressView from '@/views/BudgetProgressView.vue'
 import DisposableIncomeTrackerView from '@/views/DisposableIncomeTrackerView.vue'
+import ExtraPurchasesView from '@/views/ExtraPurchasesView.vue'
 import CreditUtilizationView from '@/views/CreditUtilizationView.vue'
 import CreditLoanFormView from '@/views/CreditLoanFormView.vue'
 import LoanCountdownView from '@/views/LoanCountdownView.vue'
@@ -35,6 +36,7 @@ const REAL_VIEWS = {
   expenses: ExpensesView,
   'budget-progress': BudgetProgressView,
   'disposable-tracker': DisposableIncomeTrackerView,
+  'extra-purchases': ExtraPurchasesView,
   'disposable-balancer': DisposableBalancerView,
   'credit-utilization': CreditUtilizationView,
   'loan-countdown': LoanCountdownView,
