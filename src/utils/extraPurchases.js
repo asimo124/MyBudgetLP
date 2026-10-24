@@ -2,6 +2,8 @@
 
 export const VIEW_MODES = ['both', 'lists', 'charts']
 
+export const DEFAULT_SELECTED_PERIOD_COUNT = 2
+
 export function round2(value) {
   return Math.round((Number(value) || 0) * 100) / 100
 }
@@ -73,6 +75,47 @@ export function totalForDay(periodItems, dayIso) {
 export function payPeriodIdForDate(payPeriods, dateIso) {
   const period = payPeriods.find((p) => dateIso >= p.start_date && dateIso <= p.end_date)
   return period ? period.id : 0
+}
+
+/**
+ * Pay periods offered in the paycheck filter: those that have already
+ * started, plus any holding purchases. Newest first. Future pay periods are
+ * excluded because `ip_pay_period` is generated a year ahead.
+ */
+export function selectablePayPeriods(payPeriods, itemsByPeriodId, today = todayYmd()) {
+  return payPeriods
+    .filter(
+      (period) =>
+        period.start_date <= today || (itemsByPeriodId.get(period.id) || []).length > 0
+    )
+    .sort((a, b) => b.start_date.localeCompare(a.start_date))
+}
+
+/** Start dates of the N most recent selectable pay periods. */
+export function defaultSelectedStartDates(selectable, count = DEFAULT_SELECTED_PERIOD_COUNT) {
+  return selectable.slice(0, count).map((period) => period.start_date)
+}
+
+/**
+ * The filter persists pay period start dates rather than ids: the legacy
+ * IpPayPeriod::updatePayPeriods() routine deletes and reinserts rows, so ids
+ * are not stable between runs and a saved id can later point at a different
+ * paycheck. Returns null when nothing stored still applies, so the caller can
+ * fall back to the default selection.
+ */
+export function resolveStoredSelection(stored, selectable) {
+  if (!Array.isArray(stored)) return null
+  const available = new Set(selectable.map((period) => period.start_date))
+  const kept = stored.filter((startDate) => available.has(startDate))
+  if (kept.length) return kept
+  // An explicit empty selection is valid; vanished dates are not.
+  return stored.length === 0 ? [] : null
+}
+
+/** Pay period ids whose start dates are in the current filter. */
+export function selectedPeriodIds(payPeriods, selectedStartDates) {
+  const selected = new Set(selectedStartDates)
+  return payPeriods.filter((period) => selected.has(period.start_date)).map((period) => period.id)
 }
 
 /** Pay periods that have at least one purchase, oldest first. */

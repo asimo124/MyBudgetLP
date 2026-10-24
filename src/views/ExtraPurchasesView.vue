@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import api from '@/api/client'
 import DrilldownBarChart from '@/components/DrilldownBarChart.vue'
 import {
@@ -9,11 +9,15 @@ import {
   buildPeriodSection,
   chartDaysFor,
   currency,
+  defaultSelectedStartDates,
   formatDate,
   groupByPayPeriod,
   payPeriodIdForDate as resolvePayPeriodId,
   purchasesForDay,
+  resolveStoredSelection,
   round2,
+  selectablePayPeriods,
+  selectedPeriodIds,
   shortDate,
   sumAmount,
   todayYmd,
@@ -28,6 +32,7 @@ const API = {
 }
 
 const VIEW_MODE_KEY = 'extra_purchases_view_mode'
+const PAY_PERIOD_FILTER_KEY = 'extra_purchases_pay_periods'
 
 const items = ref([])
 const payPeriods = ref([])
@@ -58,6 +63,105 @@ watch(viewMode, (value) => {
 
 const showLists = computed(() => viewMode.value !== 'charts')
 const showCharts = computed(() => viewMode.value !== 'lists')
+
+/* ---------- pay period filter ---------- */
+
+const selectedStartDates = ref([])
+const filterOpen = ref(false)
+const filterEl = ref(null)
+let filterInitialized = false
+
+function loadStoredSelection() {
+  try {
+    const raw = localStorage.getItem(PAY_PERIOD_FILTER_KEY)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return Array.isArray(parsed) ? parsed : null
+  } catch {
+    return null
+  }
+}
+
+function persistSelection(dates) {
+  try {
+    localStorage.setItem(PAY_PERIOD_FILTER_KEY, JSON.stringify(dates))
+  } catch {
+    /* ignore */
+  }
+}
+
+const filterOptions = computed(() =>
+  selectablePayPeriods(payPeriods.value, itemsByPeriodId.value)
+)
+
+function applyResolvedSelection(options) {
+  const resolved =
+    resolveStoredSelection(
+      filterInitialized ? selectedStartDates.value : loadStoredSelection(),
+      options
+    ) || defaultSelectedStartDates(options)
+  selectedStartDates.value = resolved
+  persistSelection(resolved)
+}
+
+watch(filterOptions, (options) => {
+  if (!options.length) {
+    selectedStartDates.value = []
+    return
+  }
+  applyResolvedSelection(options)
+  filterInitialized = true
+})
+
+function isPeriodSelected(startDate) {
+  return selectedStartDates.value.includes(startDate)
+}
+
+function togglePeriod(startDate) {
+  const next = isPeriodSelected(startDate)
+    ? selectedStartDates.value.filter((date) => date !== startDate)
+    : [...selectedStartDates.value, startDate]
+  selectedStartDates.value = next
+  persistSelection(next)
+}
+
+function selectLastTwo() {
+  const next = defaultSelectedStartDates(filterOptions.value)
+  selectedStartDates.value = next
+  persistSelection(next)
+}
+
+function selectAllPeriods() {
+  const next = filterOptions.value.map((period) => period.start_date)
+  selectedStartDates.value = next
+  persistSelection(next)
+}
+
+function includePeriodInFilter(periodId) {
+  const period = payPeriods.value.find((p) => p.id === periodId)
+  if (!period || isPeriodSelected(period.start_date)) return
+  const next = [...selectedStartDates.value, period.start_date]
+  selectedStartDates.value = next
+  persistSelection(next)
+}
+
+const filterSummary = computed(() => {
+  const count = selectedStartDates.value.length
+  if (!count) return 'None selected'
+  if (count === filterOptions.value.length) return 'All pay periods'
+  const labels = filterOptions.value
+    .filter((period) => isPeriodSelected(period.start_date))
+    .map((period) => period.label)
+  if (labels.length <= 2) return labels.join(', ')
+  return `${labels.length} pay periods`
+})
+
+function onDocumentClick(event) {
+  if (!filterOpen.value) return
+  if (filterEl.value && !filterEl.value.contains(event.target)) {
+    filterOpen.value = false
+  }
+}
 
 /* ---------- loading ---------- */
 
@@ -90,20 +194,34 @@ async function loadData() {
 
 const itemsByPeriodId = computed(() => groupByPayPeriod(items.value))
 
+const visiblePeriodIds = computed(
+  () => new Set(selectedPeriodIds(payPeriods.value, selectedStartDates.value))
+)
+
+const visibleItems = computed(() =>
+  items.value.filter((item) => visiblePeriodIds.value.has(item.pay_period_id))
+)
+
+const visibleItemsByPeriodId = computed(() => groupByPayPeriod(visibleItems.value))
+
 const allPurchasesDesc = computed(() =>
-  [...items.value].sort(
+  [...visibleItems.value].sort(
     (a, b) => b.purchase_date.localeCompare(a.purchase_date) || b.id - a.id
   )
 )
 
-const grandTotal = computed(() => sumAmount(items.value))
+const grandTotal = computed(() => sumAmount(visibleItems.value))
 
 const payPeriodOptions = computed(() =>
   [...payPeriods.value].sort((a, b) => b.start_date.localeCompare(a.start_date))
 )
 
+const visiblePeriods = computed(() =>
+  payPeriods.value.filter((period) => visiblePeriodIds.value.has(period.id))
+)
+
 const activePeriodsAsc = computed(() =>
-  activePeriodsAscending(payPeriods.value, itemsByPeriodId.value)
+  activePeriodsAscending(visiblePeriods.value, visibleItemsByPeriodId.value)
 )
 
 /* ---------- per pay period sections ---------- */
@@ -126,7 +244,7 @@ const periodSections = computed(() =>
     .map((period) =>
       buildPeriodSection(
         period,
-        itemsByPeriodId.value.get(period.id) || [],
+        visibleItemsByPeriodId.value.get(period.id) || [],
         periodDrill[period.id] || null
       )
     )
@@ -136,8 +254,15 @@ const periodSections = computed(() =>
 
 const overviewDrill = reactive({ periodId: null, day: null })
 
+watch(visiblePeriodIds, (ids) => {
+  if (overviewDrill.periodId && !ids.has(overviewDrill.periodId)) {
+    overviewDrill.periodId = null
+    overviewDrill.day = null
+  }
+})
+
 const overviewRoot = computed(() =>
-  buildOverviewChart(activePeriodsAsc.value, itemsByPeriodId.value)
+  buildOverviewChart(activePeriodsAsc.value, visibleItemsByPeriodId.value)
 )
 
 function overviewPointLabel(seriesIndex, dataPointIndex) {
@@ -149,7 +274,7 @@ const overviewDrilldown = computed(() => {
   const period = payPeriods.value.find((p) => p.id === overviewDrill.periodId)
   if (!period) return null
 
-  const periodItems = itemsByPeriodId.value.get(period.id) || []
+  const periodItems = visibleItemsByPeriodId.value.get(period.id) || []
   const days = chartDaysFor(period, periodItems)
 
   if (overviewDrill.day) {
@@ -174,7 +299,7 @@ const overviewDrilldown = computed(() => {
   }
 })
 
-const overviewTitle = computed(() => overviewDrilldown.value?.title || 'All pay periods')
+const overviewTitle = computed(() => overviewDrilldown.value?.title || 'Selected pay periods')
 
 function drillOverview({ dataPointIndex }) {
   const current = overviewDrilldown.value
@@ -294,6 +419,7 @@ async function savePurchase() {
       formError.value = data.error || 'Failed to save purchase.'
       return
     }
+    includePeriodInFilter(payload.pay_period_id)
     closeModal()
     await loadData()
   } catch (err) {
@@ -333,7 +459,14 @@ async function confirmDelete() {
   }
 }
 
-onMounted(loadData)
+onMounted(() => {
+  document.addEventListener('click', onDocumentClick)
+  loadData()
+})
+
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocumentClick)
+})
 </script>
 
 <template>
@@ -370,6 +503,63 @@ onMounted(loadData)
           <option value="both">Datalist &amp; Charts</option>
         </select>
       </div>
+      <div ref="filterEl" class="flex items-center gap-2">
+        <label class="text-sm text-gray-600 dark:text-gray-400">Pay periods</label>
+        <div class="relative">
+        <button
+          type="button"
+          class="form-input flex min-w-[12rem] items-center justify-between gap-2 text-left"
+          :aria-expanded="filterOpen"
+          aria-haspopup="listbox"
+          @click="filterOpen = !filterOpen"
+        >
+          <span class="truncate">{{ filterSummary }}</span>
+          <span class="text-xs text-gray-400">▾</span>
+        </button>
+        <div
+          v-if="filterOpen"
+          class="absolute left-0 z-40 mt-1 w-72 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg dark:border-gray-700 dark:bg-gray-900"
+        >
+          <div class="flex gap-2 border-b border-gray-200 px-3 py-2 dark:border-gray-700">
+            <button
+              type="button"
+              class="text-xs text-primary-600 hover:underline dark:text-primary-400"
+              @click="selectLastTwo"
+            >
+              Last 2
+            </button>
+            <button
+              type="button"
+              class="text-xs text-primary-600 hover:underline dark:text-primary-400"
+              @click="selectAllPeriods"
+            >
+              Select all
+            </button>
+          </div>
+          <div class="max-h-72 overflow-y-auto py-1" role="listbox" aria-multiselectable="true">
+            <label
+              v-for="period in filterOptions"
+              :key="'filter-' + period.id"
+              class="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm hover:bg-gray-50 dark:hover:bg-gray-800"
+            >
+              <input
+                type="checkbox"
+                class="rounded border-gray-300"
+                :checked="isPeriodSelected(period.start_date)"
+                @change="togglePeriod(period.start_date)"
+              />
+              <span class="text-gray-900 dark:text-white">{{ period.label }}</span>
+              <span class="text-xs text-gray-500 dark:text-gray-400">
+                {{ formatDate(period.start_date) }} – {{ formatDate(period.end_date) }}
+              </span>
+            </label>
+            <p v-if="!filterOptions.length" class="px-3 py-2 text-sm italic text-gray-500">
+              No pay periods loaded.
+            </p>
+          </div>
+        </div>
+        </div>
+      </div>
       <div class="ml-auto text-sm text-gray-600 dark:text-gray-400">
         Total spent:
         <span class="font-semibold text-gray-900 dark:text-white">{{ currency(grandTotal) }}</span>
@@ -396,7 +586,11 @@ onMounted(loadData)
             <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
               <tr v-if="!loading && !allPurchasesDesc.length">
                 <td colspan="5" class="px-3 py-6 text-center text-sm italic text-gray-500">
-                  No extra purchases yet.
+                  {{
+                    items.length && !visibleItems.length
+                      ? 'No extra purchases in the selected pay periods.'
+                      : 'No extra purchases yet.'
+                  }}
                 </td>
               </tr>
               <tr
@@ -448,7 +642,11 @@ onMounted(loadData)
       v-if="!loading && !periodSections.length"
       class="text-sm text-gray-500"
     >
-      Add a purchase to see per-pay-period breakdowns.
+      {{
+        selectedStartDates.length
+          ? 'No extra purchases in the selected pay periods.'
+          : 'Select a pay period to see purchases and charts.'
+      }}
     </p>
 
     <!-- Per pay period -->
