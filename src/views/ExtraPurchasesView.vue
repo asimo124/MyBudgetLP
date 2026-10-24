@@ -90,10 +90,6 @@ function persistSelection(dates) {
   }
 }
 
-const filterOptions = computed(() =>
-  selectablePayPeriods(payPeriods.value, itemsByPeriodId.value)
-)
-
 function applyResolvedSelection(options) {
   const resolved =
     resolveStoredSelection(
@@ -103,15 +99,6 @@ function applyResolvedSelection(options) {
   selectedStartDates.value = resolved
   persistSelection(resolved)
 }
-
-watch(filterOptions, (options) => {
-  if (!options.length) {
-    selectedStartDates.value = []
-    return
-  }
-  applyResolvedSelection(options)
-  filterInitialized = true
-})
 
 function isPeriodSelected(startDate) {
   return selectedStartDates.value.includes(startDate)
@@ -193,6 +180,19 @@ async function loadData() {
 /* ---------- grouping ---------- */
 
 const itemsByPeriodId = computed(() => groupByPayPeriod(items.value))
+
+const filterOptions = computed(() =>
+  selectablePayPeriods(payPeriods.value, itemsByPeriodId.value)
+)
+
+watch(filterOptions, (options) => {
+  if (!options.length) {
+    selectedStartDates.value = []
+    return
+  }
+  applyResolvedSelection(options)
+  filterInitialized = true
+})
 
 const visiblePeriodIds = computed(
   () => new Set(selectedPeriodIds(payPeriods.value, selectedStartDates.value))
