@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import api from '@/api/client'
 import DrilldownBarChart from '@/components/DrilldownBarChart.vue'
 import {
@@ -301,26 +301,61 @@ const overviewDrilldown = computed(() => {
 
 const overviewTitle = computed(() => overviewDrilldown.value?.title || 'Selected pay periods')
 
+// iOS Chrome/WebKit scroll-anchors to similar headings when the overview
+// chart remounts, which jumps the viewport to the matching pay-period chart.
+function withPreservedScroll(fn) {
+  const y = window.scrollY
+  fn()
+  nextTick(() => {
+    window.scrollTo(0, y)
+  })
+}
+
 function drillOverview({ dataPointIndex }) {
-  const current = overviewDrilldown.value
-  if (!current) {
-    const period = overviewRoot.value.periods[dataPointIndex]
-    if (period) overviewDrill.periodId = period.id
-    return
-  }
-  if (current.level === 'period') {
-    const day = current.days[dataPointIndex]
-    if (day) overviewDrill.day = day
-  }
+  withPreservedScroll(() => {
+    const current = overviewDrilldown.value
+    if (!current) {
+      const period = overviewRoot.value.periods[dataPointIndex]
+      if (period) overviewDrill.periodId = period.id
+      return
+    }
+    if (current.level === 'period') {
+      const day = current.days[dataPointIndex]
+      if (day) overviewDrill.day = day
+    }
+  })
 }
 
 function backOverview() {
-  if (overviewDrill.day) {
-    overviewDrill.day = null
-    return
-  }
-  overviewDrill.periodId = null
+  withPreservedScroll(() => {
+    if (overviewDrill.day) {
+      overviewDrill.day = null
+      return
+    }
+    overviewDrill.periodId = null
+  })
 }
+
+const overviewChart = computed(() => {
+  if (overviewDrilldown.value) {
+    return {
+      categories: overviewDrilldown.value.categories,
+      series: overviewDrilldown.value.series,
+      stacked: false,
+      drillable: overviewDrilldown.value.drillable,
+      pointLabel: null,
+      height: 380,
+    }
+  }
+  return {
+    categories: overviewRoot.value.categories,
+    series: overviewRoot.value.series,
+    stacked: true,
+    drillable: true,
+    pointLabel: overviewPointLabel,
+    height: 440,
+  }
+})
 
 /* ---------- create / edit ---------- */
 
@@ -653,7 +688,7 @@ onBeforeUnmount(() => {
     <div
       v-for="section in periodSections"
       :key="'period-' + section.period.id"
-      class="space-y-3"
+      class="space-y-3 [overflow-anchor:none]"
     >
       <h2 class="text-lg font-semibold text-gray-900 dark:text-white">
         Pay Period {{ section.period.label }}
@@ -751,20 +786,12 @@ onBeforeUnmount(() => {
         </div>
 
         <DrilldownBarChart
-          v-if="overviewDrilldown"
-          :categories="overviewDrilldown.categories"
-          :series="overviewDrilldown.series"
-          :drillable="overviewDrilldown.drillable"
-          @drill="drillOverview"
-        />
-        <DrilldownBarChart
-          v-else
-          stacked
-          drillable
-          :categories="overviewRoot.categories"
-          :series="overviewRoot.series"
-          :point-label="overviewPointLabel"
-          :height="440"
+          :categories="overviewChart.categories"
+          :series="overviewChart.series"
+          :stacked="overviewChart.stacked"
+          :drillable="overviewChart.drillable"
+          :point-label="overviewChart.pointLabel"
+          :height="overviewChart.height"
           @drill="drillOverview"
         />
       </div>
