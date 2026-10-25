@@ -16,6 +16,7 @@ const props = defineProps({
 const emit = defineEmits(['drill'])
 
 const chartEl = ref(null)
+const chartId = `ep-chart-${Math.random().toString(36).slice(2, 10)}`
 let chart = null
 let themeObserver = null
 let lastDark = null
@@ -33,6 +34,7 @@ function buildOptions() {
 
   return {
     chart: {
+      id: chartId,
       type: 'bar',
       stacked: props.stacked,
       height: props.height,
@@ -40,11 +42,20 @@ function buildOptions() {
       toolbar: { show: false },
       animations: { enabled: false },
       events: {
-        dataPointSelection: (_event, _context, config) => {
+        // dataPointSelection is broadcast to every ApexCharts instance on the
+        // page. A click on the overview chart would also drill the per-period
+        // charts above it. `click` stays on this instance; still ignore clicks
+        // whose target sits in a different chart's DOM.
+        click: (event, _context, config) => {
           if (!props.drillable) return
+          const index = config?.dataPointIndex
+          if (index == null || index < 0) return
+          if (event?.target && chartEl.value && !chartEl.value.contains(event.target)) {
+            return
+          }
           emit('drill', {
-            dataPointIndex: config.dataPointIndex,
-            seriesIndex: config.seriesIndex,
+            dataPointIndex: index,
+            seriesIndex: config.seriesIndex ?? 0,
           })
         },
       },
