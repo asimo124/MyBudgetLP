@@ -258,10 +258,6 @@ onMounted(loadExpenses)
                 class="form-control h-10 rounded-lg px-3 text-sm"
               />
             </div>
-            <label class="inline-flex items-center gap-2 text-sm">
-              <input v-model="item.watch_flag" type="checkbox" class="rounded" />
-              Watched
-            </label>
           </div>
           <button
             type="button"
