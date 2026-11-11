@@ -124,7 +124,22 @@ async function confirmDelete() {
   }
 }
 
+const pageRoot = ref(null)
+
+/** Scroll the window (and any scrolling layout wrapper) back to the very top. */
+function scrollToTop() {
+  window.scrollTo({ top: 0, behavior: 'smooth' })
+  let parent = pageRoot.value?.parentElement
+  while (parent && parent !== document.documentElement) {
+    if (parent.scrollTop > 0) {
+      parent.scrollTo({ top: 0, behavior: 'smooth' })
+    }
+    parent = parent.parentElement
+  }
+}
+
 async function queueDateJob(testMode) {
+  scrollToTop()
   mainMsg.value = ''
   mainError.value = ''
   tempMsg.value = 'Queueing job...'
@@ -175,7 +190,7 @@ onMounted(loadExpenses)
 
 <template>
   <!-- pb-28 leaves room so the floating job buttons never cover the last form -->
-  <div class="space-y-4 pb-28">
+  <div ref="pageRoot" class="space-y-4 pb-28">
     <h2 class="text-xl font-semibold text-neutral-900 sm:text-2xl dark:text-white">
       Future Expenses
     </h2>
