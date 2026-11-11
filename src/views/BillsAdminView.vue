@@ -483,10 +483,6 @@ watch(
                 <dd>{{ frequencyInfo(bill) }}</dd>
               </div>
               <div>
-                <dt class="text-neutral-400">Start</dt>
-                <dd>{{ bill.start_date_display || '—' }}</dd>
-              </div>
-              <div>
                 <dt class="text-neutral-400">End</dt>
                 <dd>{{ bill.end_date_display || '—' }}</dd>
               </div>
@@ -549,7 +545,6 @@ watch(
               <template v-if="!filters.showAuditFields">
                 <th class="px-4 py-3 font-medium">Amount</th>
                 <th class="px-4 py-3 font-medium">Frequency Info</th>
-                <th class="px-4 py-3 font-medium">Start Date</th>
                 <th class="px-4 py-3 font-medium">End Date</th>
               </template>
               <template v-else>
@@ -580,7 +575,6 @@ watch(
               <template v-if="!filters.showAuditFields">
                 <td class="px-4 py-3 align-top">{{ bill.amount_formatted }}</td>
                 <td class="px-4 py-3 align-top">{{ frequencyInfo(bill) }}</td>
-                <td class="px-4 py-3 align-top">{{ bill.start_date_display }}</td>
                 <td class="px-4 py-3 align-top">{{ bill.end_date_display }}</td>
               </template>
               <template v-else>
