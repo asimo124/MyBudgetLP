@@ -1,14 +1,7 @@
 <script setup>
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/api/client'
-import LoanPayoffGantt from '@/components/LoanPayoffGantt.vue'
-import { scrollToElement, waitForLayout } from '@/utils/scrollToElement'
-import {
-  defaultLoanFormState,
-  loadSavedFormInto,
-  simulateLoanCountdown,
-} from '@/utils/loanCountdown'
 
 const FILTER_STORAGE_KEY = 'credit_utilization_filters'
 const SORT_OPTIONS = ['sort_order', 'debt_owed', 'title', 'milestone_order']
@@ -41,15 +34,9 @@ const showDeleteModal = ref(false)
 
 const stored = loadStoredFilters()
 
-function toCutoffInteger(value) {
-  const parsed = Math.round(Number(String(value ?? '').replace(/[^0-9.]/g, '')))
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0
-}
-
 const filters = reactive({
   sort: stored && SORT_OPTIONS.includes(stored.sort) ? stored.sort : 'sort_order',
   sort_dir: stored && (stored.sort_dir === 'ASC' || stored.sort_dir === 'DESC') ? stored.sort_dir : 'ASC',
-  paid_by_cutoff: stored ? toCutoffInteger(stored.paid_by_cutoff) : 0,
 })
 
 watch(
@@ -69,8 +56,6 @@ const summary = reactive({
   total_credit_limit: 0,
   credit_utilization: 0,
   total_min_payment: 0,
-  paid_by_cutoff: 0,
-  paid_off_by_cutoff: [],
 })
 
 const increaseCreditLimitBy = ref(0)
@@ -92,24 +77,6 @@ const remainingLoansText = computed(() => {
     .map((row) => `${padEnd(row.name, nameWidth)} | ${padEnd(row.amount, amountWidth)}`)
     .join('\n')
 })
-
-const countdownForm = reactive(defaultLoanFormState())
-const countdownExtras = reactive({})
-const ganttSourceLoans = ref([])
-
-function loadCountdownPlan() {
-  const extras = loadSavedFormInto(countdownForm) || {}
-  Object.keys(countdownExtras).forEach((key) => {
-    delete countdownExtras[key]
-  })
-  Object.keys(extras).forEach((id) => {
-    countdownExtras[id] = extras[id]
-  })
-}
-
-const countdownSimulation = computed(() =>
-  simulateLoanCountdown(ganttSourceLoans.value, countdownForm, countdownExtras)
-)
 
 function money(value) {
   const n = Number(value)
@@ -136,39 +103,20 @@ function milestoneStyle(value) {
 async function loadLoans() {
   loading.value = true
   mainError.value = ''
-  loadCountdownPlan()
   try {
-    const listParams = {
-      sort: filters.sort,
-      sort_dir: filters.sort_dir,
-      increase_credit_limit_by: increaseCreditLimitBy.value || 0,
-      paid_by_cutoff: filters.paid_by_cutoff || 0,
-    }
-    const ganttParams = {
-      sort: 'milestone_order',
-      sort_dir: 'ASC',
-      paid_by_cutoff: 0,
-      increase_credit_limit_by: 0,
-    }
-    const sameAsGantt =
-      listParams.sort === ganttParams.sort &&
-      listParams.sort_dir === ganttParams.sort_dir &&
-      !listParams.paid_by_cutoff
-
-    const requests = [api.get('/api/credit_utilization/list.php', { params: listParams })]
-    if (!sameAsGantt) {
-      requests.push(api.get('/api/credit_utilization/list.php', { params: ganttParams }))
-    }
-    const [listRes, ganttRes] = await Promise.all(requests)
-    const data = listRes.data
+    const { data } = await api.get('/api/credit_utilization/list.php', {
+      params: {
+        sort: filters.sort,
+        sort_dir: filters.sort_dir,
+        increase_credit_limit_by: increaseCreditLimitBy.value || 0,
+      },
+    })
     loans.value = data.loans || []
     milestones.value = data.milestones || []
     chartHeaders.value = data.chart?.headers || []
     chartValues.value = data.chart?.values || []
     creditUtilizationOrig.value = data.chart?.credit_utilization_orig || 0
     Object.assign(summary, data.summary || {})
-    const ganttLoans = (ganttRes?.data || data).loans || []
-    ganttSourceLoans.value = ganttLoans.filter((loan) => Number(loan.debt_owed) > 0)
   } catch (err) {
     mainError.value = err.response?.data?.message || 'Failed to load credit utilization.'
   } finally {
@@ -177,7 +125,6 @@ async function loadLoans() {
 }
 
 async function applyFilters() {
-  filters.paid_by_cutoff = toCutoffInteger(filters.paid_by_cutoff)
   mainMsg.value = ''
   await loadLoans()
 }
@@ -185,20 +132,6 @@ async function applyFilters() {
 async function applyIncreaseCreditLimit() {
   mainMsg.value = ''
   await loadLoans()
-}
-
-async function clearPaidByCutoff() {
-  filters.paid_by_cutoff = 0
-  await applyFilters()
-}
-
-function scrollToLoansList() {
-  const candidates = [
-    document.getElementById('credit-loans-desktop'),
-    document.getElementById('credit-loans-mobile'),
-  ]
-  const el = candidates.find((node) => node && node.offsetParent !== null)
-  scrollToElement(el)
 }
 
 function openDelete(id) {
@@ -228,20 +161,7 @@ onMounted(async () => {
   if (route.query.Message) {
     mainMsg.value = String(route.query.Message)
   }
-  // Arriving from Budget Progress with a disposable total to project against.
-  const fromBudgetProgress = route.query.paid_by_cutoff !== undefined
-  if (fromBudgetProgress) {
-    filters.paid_by_cutoff = toCutoffInteger(route.query.paid_by_cutoff)
-    const query = { ...route.query }
-    delete query.paid_by_cutoff
-    await router.replace({ query })
-  }
   await loadLoans()
-  if (fromBudgetProgress) {
-    await nextTick()
-    await waitForLayout()
-    scrollToLoansList()
-  }
 })
 </script>
 
@@ -295,30 +215,6 @@ onMounted(async () => {
               <option value="DESC">DESC</option>
             </select>
           </div>
-          <div>
-            <label class="mb-1 block text-sm text-gray-600 dark:text-gray-400">Paid By Cutoff</label>
-            <div class="relative">
-              <input
-                v-model="filters.paid_by_cutoff"
-                type="text"
-                inputmode="numeric"
-                class="form-input w-full pr-9"
-                placeholder="0"
-                @change="applyFilters"
-                @keyup.enter="applyFilters"
-              />
-              <button
-                v-if="Number(filters.paid_by_cutoff) > 0"
-                type="button"
-                class="absolute inset-y-0 right-0 flex items-center px-3 text-lg leading-none text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                title="Clear"
-                aria-label="Clear Paid By Cutoff"
-                @click="clearPaidByCutoff"
-              >
-                &times;
-              </button>
-            </div>
-          </div>
           <div class="flex items-end">
             <button
               type="button"
@@ -329,17 +225,6 @@ onMounted(async () => {
             </button>
           </div>
         </div>
-        <p v-if="summary.paid_by_cutoff > 0" class="mt-3 text-sm text-gray-600 dark:text-gray-400">
-          Paying {{ money(summary.paid_by_cutoff) }} in milestone order clears
-          <span class="font-medium text-gray-900 dark:text-white">
-            {{ summary.paid_off_by_cutoff?.length || 0 }}
-          </span>
-          loan/card<span v-if="(summary.paid_off_by_cutoff?.length || 0) !== 1">s</span><span
-            v-if="summary.paid_off_by_cutoff?.length"
-          >
-            ({{ summary.paid_off_by_cutoff.join(', ') }})</span
-          >. Those are hidden below; what is left is what you would still owe.
-        </p>
       </div>
     </div>
 
@@ -379,14 +264,13 @@ onMounted(async () => {
               <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Credit Utilization</th>
               <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Min Payment</th>
               <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Adjust Disposable</th>
-              <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Disposable</th>
               <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Milestone</th>
               <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Actions</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
             <tr v-if="!loans.length">
-              <td colspan="9" class="px-3 py-6 text-center text-sm italic text-gray-500">No loans/cards found</td>
+              <td colspan="8" class="px-3 py-6 text-center text-sm italic text-gray-500">No loans/cards found</td>
             </tr>
             <tr v-for="loan in loans" :key="loan.id" class="hover:bg-gray-50 dark:hover:bg-gray-800/50">
               <td class="px-3 py-2 text-sm font-medium text-gray-900 dark:text-white">{{ loan.title }}</td>
@@ -395,7 +279,6 @@ onMounted(async () => {
               <td class="px-3 py-2 text-sm">{{ pct(loan.credit_utilization) }}</td>
               <td class="px-3 py-2 text-sm">{{ money(loan.min_payment_accum) }}</td>
               <td class="px-3 py-2 text-sm">{{ money(loan.adjust_disposable_amount_accum) }}</td>
-              <td class="px-3 py-2 text-sm">{{ money(loan.min_payment_adjust_disposable) }}</td>
               <td class="px-3 py-2 text-sm">{{ loan.milestone_order }}</td>
               <td class="px-3 py-2 text-sm">
                 <div class="flex gap-2">
@@ -424,7 +307,6 @@ onMounted(async () => {
               <td class="px-3 py-2">{{ money(summary.total_credit_limit) }}</td>
               <td class="px-3 py-2">{{ pct(summary.credit_utilization) }}</td>
               <td class="px-3 py-2">{{ money(summary.total_min_payment) }}</td>
-              <td class="px-3 py-2"></td>
               <td class="px-3 py-2"></td>
               <td class="px-3 py-2"></td>
               <td class="px-3 py-2"></td>
@@ -457,10 +339,6 @@ onMounted(async () => {
             <div>
               <div class="text-xs text-gray-500">Utilization</div>
               <div>{{ pct(loan.credit_utilization) }}</div>
-            </div>
-            <div>
-              <div class="text-xs text-gray-500">Disposable</div>
-              <div>{{ money(loan.min_payment_adjust_disposable) }}</div>
             </div>
           </div>
           <div class="flex gap-2 pt-1">
@@ -579,12 +457,6 @@ onMounted(async () => {
         </div>
       </div>
     </div>
-
-    <LoanPayoffGantt
-      :bars="countdownSimulation.bars"
-      :message="countdownSimulation.error"
-      caption="Same snowball as Loan Countdown (1st/15th disposable, extras, and starting month from that page)."
-    />
 
     <div v-if="loading" class="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
       <div class="rounded-lg bg-white px-6 py-4 shadow-lg dark:bg-gray-800">Loading…</div>

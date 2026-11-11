@@ -116,7 +116,6 @@ async function loadCuLoans() {
       params: {
         sort: 'milestone_order',
         sort_dir: 'ASC',
-        paid_by_cutoff: 0,
         increase_credit_limit_by: 0,
       },
     })

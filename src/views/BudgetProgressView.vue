@@ -1,10 +1,8 @@
 <script setup>
 import { computed, onMounted, ref, watch } from 'vue'
-import { useRouter } from 'vue-router'
 import api from '@/api/client'
 import { scrollToElement } from '@/utils/scrollToElement'
 
-const router = useRouter()
 
 const defaultBalanceFirst = 6584
 const defaultBalanceFifteenth = 3584
@@ -104,22 +102,8 @@ const averageRows = computed(() => {
 })
 
 // Credit Utilization takes the cutoff as a whole dollar amount.
-const paidByCutoffFromTotal = computed(() => {
-  const total = Math.round(parseFloat(sumTotal.value) || 0)
-  return total > 0 ? total : 0
-})
-
-function viewInCreditUtil() {
-  if (paidByCutoffFromTotal.value <= 0) return
-  router.push({
-    name: 'credit-utilization',
-    query: { paid_by_cutoff: String(paidByCutoffFromTotal.value) },
-  })
-}
-
 function scrollToCreditUtilButton() {
-  const button = document.getElementById('view-in-credit-util-btn')
-  scrollToElement(button || document.getElementById('budget-progress-credit-util'))
+  scrollToElement(document.getElementById('budget-progress-credit-util'))
 }
 
 const monthlyAveragesTotal = computed(() => {
@@ -696,7 +680,7 @@ onMounted(() => {
           type="button"
           class="h-11 rounded-xl border border-neutral-300 px-4 text-sm font-medium text-neutral-800 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50 dark:border-neutral-600 dark:text-neutral-200 dark:hover:bg-dark-3"
           :disabled="fillingToCutoff"
-          title="Jump to the totals and View in Credit Util button"
+          title="Jump to the totals"
           @click="scrollToCreditUtilButton"
         >
           Jump
@@ -879,16 +863,6 @@ onMounted(() => {
           placeholder="Total"
           readonly
         />
-        <button
-          id="view-in-credit-util-btn"
-          type="button"
-          class="h-11 rounded-xl bg-primary-600 px-4 text-sm font-medium text-white hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-50"
-          :disabled="paidByCutoffFromTotal <= 0"
-          title="Use this total as the Paid By Cutoff on Credit Utilization"
-          @click="viewInCreditUtil"
-        >
-          View in Credit Util
-        </button>
       </div>
 
       <div v-if="averageRows.length" class="mt-6">
