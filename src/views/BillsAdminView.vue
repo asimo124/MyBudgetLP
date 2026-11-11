@@ -2,6 +2,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/api/client'
+import FloatingJobButtons from '@/components/FloatingJobButtons.vue'
 import { fetchTestMode } from '@/utils/testMode'
 
 const route = useRoute()
@@ -279,26 +280,11 @@ watch(
 </script>
 
 <template>
-  <div class="space-y-4">
-    <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-      <h2 class="text-xl font-semibold text-neutral-900 sm:text-2xl dark:text-white">Bills</h2>
-      <div class="grid grid-cols-1 gap-2 xs:grid-cols-2 sm:flex sm:flex-wrap">
-        <button
-          type="button"
-          class="rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700"
-          @click="queueDateJob(0)"
-        >
-          Run Dates Job
-        </button>
-        <button
-          type="button"
-          class="rounded-xl bg-danger-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-danger-700"
-          @click="queueDateJob(1)"
-        >
-          Run Dates Job Test
-        </button>
-      </div>
-    </div>
+  <!-- pb-28 leaves room so the floating job buttons never cover the last row -->
+  <div class="space-y-4 pb-28">
+    <h2 class="text-xl font-semibold text-neutral-900 sm:text-2xl dark:text-white">Bills</h2>
+
+    <FloatingJobButtons :disabled="didQueue" @run="queueDateJob" />
 
     <div
       v-if="testModeActive"

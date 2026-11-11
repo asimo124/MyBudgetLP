@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
 import api from '@/api/client'
+import FloatingJobButtons from '@/components/FloatingJobButtons.vue'
 
 const expenses = ref([])
 const loading = ref(false)
@@ -124,22 +125,7 @@ async function confirmDelete() {
   }
 }
 
-const pageRoot = ref(null)
-
-/** Scroll the window (and any scrolling layout wrapper) back to the very top. */
-function scrollToTop() {
-  window.scrollTo({ top: 0, behavior: 'smooth' })
-  let parent = pageRoot.value?.parentElement
-  while (parent && parent !== document.documentElement) {
-    if (parent.scrollTop > 0) {
-      parent.scrollTo({ top: 0, behavior: 'smooth' })
-    }
-    parent = parent.parentElement
-  }
-}
-
 async function queueDateJob(testMode) {
-  scrollToTop()
   mainMsg.value = ''
   mainError.value = ''
   tempMsg.value = 'Queueing job...'
@@ -190,32 +176,12 @@ onMounted(loadExpenses)
 
 <template>
   <!-- pb-28 leaves room so the floating job buttons never cover the last form -->
-  <div ref="pageRoot" class="space-y-4 pb-28">
+  <div class="space-y-4 pb-28">
     <h2 class="text-xl font-semibold text-neutral-900 sm:text-2xl dark:text-white">
       Future Expenses
     </h2>
 
-    <div
-      class="fixed right-4 z-40 flex flex-col items-end gap-2"
-      style="bottom: calc(1rem + env(safe-area-inset-bottom))"
-    >
-      <button
-        type="button"
-        class="rounded-full bg-primary-600 px-5 py-3 text-sm font-medium text-white shadow-lg hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
-        :disabled="didQueue"
-        @click="queueDateJob(0)"
-      >
-        Run Job
-      </button>
-      <button
-        type="button"
-        class="rounded-full bg-danger-600 px-5 py-3 text-sm font-medium text-white shadow-lg hover:bg-danger-700 disabled:cursor-not-allowed disabled:opacity-60"
-        :disabled="didQueue"
-        @click="queueDateJob(1)"
-      >
-        Run Test Job
-      </button>
-    </div>
+    <FloatingJobButtons :disabled="didQueue" @run="queueDateJob" />
 
     <div
       v-if="mainError"
