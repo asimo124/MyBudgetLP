@@ -27,6 +27,7 @@ const filters = reactive({
   sort2_dir: 'ASC',
   showAuditFields: false,
   multiplierGreaterThan1: false,
+  // No checkboxes for these anymore — every frequency is always included.
   frequency: Object.fromEntries(FREQUENCY_OPTIONS.map((f) => [f, true])),
 })
 
@@ -42,7 +43,6 @@ function saveFilters() {
         sort2_dir: filters.sort2_dir,
         showAuditFields: filters.showAuditFields,
         multiplierGreaterThan1: filters.multiplierGreaterThan1,
-        frequency: { ...filters.frequency },
       })
     )
   } catch {
@@ -68,15 +68,6 @@ function loadFilters() {
     if (typeof saved.multiplierGreaterThan1 === 'boolean') {
       filters.multiplierGreaterThan1 = saved.multiplierGreaterThan1
     }
-    if (saved.frequency && typeof saved.frequency === 'object') {
-      FREQUENCY_OPTIONS.forEach((f) => {
-        if (typeof saved.frequency[f] === 'boolean') {
-          filters.frequency[f] = saved.frequency[f]
-        } else if (saved.frequency[f] === 0 || saved.frequency[f] === 1) {
-          filters.frequency[f] = Boolean(saved.frequency[f])
-        }
-      })
-    }
   } catch {
     // ignore corrupt storage
   }
@@ -95,17 +86,6 @@ const savingAudit = ref(false)
 
 const groupEntries = computed(() => Object.entries(groups.value))
 const testModeActive = ref(false)
-
-const allFrequenciesChecked = computed({
-  get() {
-    return FREQUENCY_OPTIONS.every((f) => filters.frequency[f])
-  },
-  set(val) {
-    FREQUENCY_OPTIONS.forEach((f) => {
-      filters.frequency[f] = val
-    })
-  },
-})
 
 function billNameClass(bill) {
   if (bill.watch_flag) return 'text-warning-600 font-semibold'
@@ -409,21 +389,6 @@ watch(
           <label class="inline-flex items-center gap-2 text-sm">
             <input v-model="filters.showAuditFields" type="checkbox" class="rounded" />
             Show Audit Fields
-          </label>
-          <label class="inline-flex items-center gap-2 text-sm">
-            <input v-model="allFrequenciesChecked" type="checkbox" class="rounded" />
-            Check All
-          </label>
-        </div>
-
-        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          <label
-            v-for="freq in FREQUENCY_OPTIONS"
-            :key="freq"
-            class="inline-flex items-start gap-2 text-sm text-neutral-700 dark:text-neutral-300"
-          >
-            <input v-model="filters.frequency[freq]" type="checkbox" class="mt-0.5 rounded" />
-            <span>{{ freq }}</span>
           </label>
         </div>
 
