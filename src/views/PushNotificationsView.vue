@@ -83,6 +83,64 @@ async function onAssignSchedule(reminder, event) {
   }
 }
 
+// Lines that would expand to more times than this show the raw cron line instead.
+const MAX_TIMES_PER_LINE = 12
+
+/** Expand one cron field (e.g. "30", "0,30", "8-10", "*\/2", "*") into its values. */
+function expandCronField(field, min, max) {
+  const values = new Set()
+  for (const part of String(field).split(',')) {
+    const step = part.match(/^\*\/(\d+)$/)
+    const range = part.match(/^(\d+)-(\d+)$/)
+    if (part === '*') {
+      for (let v = min; v <= max; v++) values.add(v)
+    } else if (step) {
+      const n = Number(step[1])
+      if (n <= 0) return null
+      for (let v = min; v <= max; v += n) values.add(v)
+    } else if (range) {
+      const from = Number(range[1])
+      const to = Number(range[2])
+      if (from > to) return null
+      for (let v = from; v <= to; v++) values.add(v)
+    } else if (/^\d+$/.test(part)) {
+      values.add(Number(part))
+    } else {
+      return null
+    }
+  }
+  const list = [...values].filter((v) => v >= min && v <= max)
+  return list.length ? list : null
+}
+
+function formatTime(hour, minute) {
+  const suffix = hour < 12 ? 'AM' : 'PM'
+  const h = hour % 12 === 0 ? 12 : hour % 12
+  return `${h}:${String(minute).padStart(2, '0')} ${suffix}`
+}
+
+/** Turn a multi-line crontab schedule into readable times, e.g. ["7:30 PM", "8:30 PM"]. */
+function cronTimes(cronSchedule) {
+  const times = []
+  const raw = []
+  for (const line of String(cronSchedule || '').split(/\r\n|\r|\n/)) {
+    const trimmed = line.trim()
+    if (!trimmed) continue
+    const [minuteField, hourField] = trimmed.split(/\s+/)
+    const minutes = expandCronField(minuteField, 0, 59)
+    const hours = expandCronField(hourField, 0, 23)
+    if (!minutes || !hours || minutes.length * hours.length > MAX_TIMES_PER_LINE) {
+      raw.push(trimmed)
+      continue
+    }
+    hours.forEach((h) => minutes.forEach((m) => times.push(h * 60 + m)))
+  }
+  const sorted = [...new Set(times)]
+    .sort((a, b) => a - b)
+    .map((t) => formatTime(Math.floor(t / 60), t % 60))
+  return [...sorted, ...raw]
+}
+
 /** Native <input type="date"> only accepts YYYY-MM-DD. */
 function dateOnly(value) {
   if (!value) return ''
@@ -307,7 +365,7 @@ onMounted(() => {
             <thead class="bg-gray-50 dark:bg-gray-800">
               <tr>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Title</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Cron Schedule</th>
+                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Times</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Actions</th>
               </tr>
             </thead>
@@ -320,7 +378,15 @@ onMounted(() => {
                   {{ schedule.title }}
                 </td>
                 <td class="px-3 py-2 text-sm">
-                  <pre class="m-0 whitespace-pre-wrap font-mono text-xs">{{ schedule.cron_schedule }}</pre>
+                  <div :title="schedule.cron_schedule">
+                    <div
+                      v-for="(time, idx) in cronTimes(schedule.cron_schedule)"
+                      :key="idx"
+                      class="whitespace-nowrap"
+                    >
+                      {{ time }}
+                    </div>
+                  </div>
                 </td>
                 <td class="whitespace-nowrap px-3 py-2 text-sm">
                   <button
