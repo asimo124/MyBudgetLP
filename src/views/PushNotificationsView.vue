@@ -83,6 +83,37 @@ async function onAssignSchedule(reminder, event) {
   }
 }
 
+/** Native <input type="date"> only accepts YYYY-MM-DD. */
+function dateOnly(value) {
+  if (!value) return ''
+  const match = String(value).match(/^(\d{4}-\d{2}-\d{2})/)
+  return match ? match[1] : ''
+}
+
+async function onLastConfirmedChange(reminder, event) {
+  const value = event.target.value
+  if (value === dateOnly(reminder.last_confirmed)) return
+  mainMsg.value = ''
+  mainError.value = ''
+  try {
+    // update.php rewrites every column, so send the rest of the reminder unchanged.
+    const { data } = await api.post('/api/push_notifications/update.php', {
+      id: reminder.id,
+      task_name: reminder.task_name,
+      task_description: reminder.task_description || '',
+      frequency_days: reminder.frequency_days,
+      schedule_id: reminder.schedule_id ?? null,
+      created_at: reminder.created_at || '',
+      last_confirmed: value,
+    })
+    mainMsg.value = data.message || 'Last confirmed has been updated.'
+    await loadData()
+  } catch (err) {
+    mainError.value = err.response?.data?.message || 'Failed to update last confirmed.'
+    await loadData()
+  }
+}
+
 function openDeleteReminder(id) {
   deleteReminderId.value = id
   showDeleteReminder.value = true
@@ -204,24 +235,19 @@ onMounted(() => {
             <thead class="bg-gray-50 dark:bg-gray-800">
               <tr>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Task Name</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Description</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Frequency</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Schedule</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Last Confirmed</th>
-                <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Created At</th>
                 <th class="px-3 py-2 text-left text-xs font-medium uppercase text-gray-500">Actions</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-gray-200 dark:divide-gray-700">
               <tr v-if="!loading && !reminders.length">
-                <td colspan="7" class="px-3 py-6 text-center text-sm text-gray-500">No reminders yet.</td>
+                <td colspan="5" class="px-3 py-6 text-center text-sm text-gray-500">No reminders yet.</td>
               </tr>
               <tr v-for="reminder in reminders" :key="reminder.id">
                 <td class="px-3 py-2 text-sm font-medium text-gray-900 dark:text-white">
                   {{ reminder.task_name }}
-                </td>
-                <td class="max-w-xs truncate px-3 py-2 text-sm text-gray-600 dark:text-gray-300">
-                  {{ reminder.task_description || '—' }}
                 </td>
                 <td class="px-3 py-2 text-sm">{{ reminder.frequency_days }}</td>
                 <td class="px-3 py-2 text-sm">
@@ -234,8 +260,14 @@ onMounted(() => {
                     <option v-for="s in schedules" :key="s.id" :value="s.id">{{ s.title }}</option>
                   </select>
                 </td>
-                <td class="whitespace-nowrap px-3 py-2 text-sm">{{ reminder.last_confirmed || '—' }}</td>
-                <td class="whitespace-nowrap px-3 py-2 text-sm">{{ reminder.created_at || '—' }}</td>
+                <td class="whitespace-nowrap px-3 py-2 text-sm">
+                  <input
+                    type="date"
+                    class="form-input min-w-[10rem]"
+                    :value="dateOnly(reminder.last_confirmed)"
+                    @change="onLastConfirmedChange(reminder, $event)"
+                  />
+                </td>
                 <td class="whitespace-nowrap px-3 py-2 text-sm">
                   <button
                     type="button"
