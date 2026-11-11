@@ -174,27 +174,32 @@ onMounted(loadExpenses)
 </script>
 
 <template>
-  <div class="space-y-4">
-    <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-      <h2 class="text-xl font-semibold text-neutral-900 sm:text-2xl dark:text-white">
-        Future Expenses
-      </h2>
-      <div class="grid grid-cols-1 gap-2 sm:flex sm:flex-wrap">
-        <button
-          type="button"
-          class="rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700"
-          @click="queueDateJob(0)"
-        >
-          Run Dates Job
-        </button>
-        <button
-          type="button"
-          class="rounded-xl bg-danger-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-danger-700"
-          @click="queueDateJob(1)"
-        >
-          Run Dates Job Test
-        </button>
-      </div>
+  <!-- pb-28 leaves room so the floating job buttons never cover the last form -->
+  <div class="space-y-4 pb-28">
+    <h2 class="text-xl font-semibold text-neutral-900 sm:text-2xl dark:text-white">
+      Future Expenses
+    </h2>
+
+    <div
+      class="fixed right-4 z-40 flex flex-col items-end gap-2"
+      style="bottom: calc(1rem + env(safe-area-inset-bottom))"
+    >
+      <button
+        type="button"
+        class="rounded-full bg-primary-600 px-5 py-3 text-sm font-medium text-white shadow-lg hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
+        :disabled="didQueue"
+        @click="queueDateJob(0)"
+      >
+        Run Job
+      </button>
+      <button
+        type="button"
+        class="rounded-full bg-danger-600 px-5 py-3 text-sm font-medium text-white shadow-lg hover:bg-danger-700 disabled:cursor-not-allowed disabled:opacity-60"
+        :disabled="didQueue"
+        @click="queueDateJob(1)"
+      >
+        Run Test Job
+      </button>
     </div>
 
     <div
