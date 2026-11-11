@@ -53,13 +53,18 @@ async function loadExpenses() {
 }
 
 async function updateAll() {
-  saving.value = true
   mainMsg.value = ''
   mainError.value = ''
+  if (expenses.value.some((item) => !String(item.vnd_bill ?? '').trim())) {
+    mainError.value = 'Every expense needs a description.'
+    return
+  }
+  saving.value = true
   try {
     const { data } = await api.post('/api/expenses/update.php', {
       items: expenses.value.map((item) => ({
         vnd_id: item.vnd_id,
+        vnd_bill: String(item.vnd_bill ?? '').trim(),
         vnd_frequency_value: item.vnd_frequency_value,
         amount: item.amount,
         watch_flag: item.watch_flag ? 1 : 0,
@@ -239,8 +244,16 @@ onMounted(loadExpenses)
           :key="`m-${item.vnd_id}`"
           class="rounded-xl border border-neutral-200 p-3 dark:border-neutral-600"
         >
-          <p class="mb-3 font-semibold text-neutral-900 dark:text-white">{{ item.vnd_bill }}</p>
           <div class="mb-3 space-y-2">
+            <div>
+              <label class="mb-1 block text-xs text-neutral-500">Description</label>
+              <input
+                v-model="item.vnd_bill"
+                type="text"
+                required
+                class="form-control h-10 rounded-lg px-3 text-sm font-semibold"
+              />
+            </div>
             <div>
               <label class="mb-1 block text-xs text-neutral-500">Date</label>
               <input
@@ -286,8 +299,13 @@ onMounted(loadExpenses)
               :key="item.vnd_id"
               class="border-t border-neutral-100 dark:border-neutral-700"
             >
-              <td class="px-4 py-3 align-middle font-medium text-neutral-900 dark:text-white">
-                {{ item.vnd_bill }}
+              <td class="px-4 py-3 align-middle">
+                <input
+                  v-model="item.vnd_bill"
+                  type="text"
+                  required
+                  class="form-control h-10 min-w-[12rem] rounded-lg px-3 font-medium"
+                />
               </td>
               <td class="px-4 py-3 align-middle">
                 <input
