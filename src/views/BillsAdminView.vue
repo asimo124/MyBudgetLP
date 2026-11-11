@@ -461,7 +461,6 @@ watch(
         >
           <div class="mb-2 flex items-start justify-between gap-2">
             <div class="min-w-0">
-              <p class="text-xs text-neutral-500">#{{ bill.vnd_id }}</p>
               <p :class="billNameClass(bill)" class="break-words">
                 {{ bill.vnd_bill }}
                 <span
@@ -550,7 +549,6 @@ watch(
         <table class="min-w-full text-left text-sm">
           <thead class="bg-neutral-50 text-neutral-600 dark:bg-dark-3 dark:text-neutral-300">
             <tr>
-              <th class="px-4 py-3 font-medium">ID</th>
               <th class="px-4 py-3 font-medium">Bill</th>
               <template v-if="!filters.showAuditFields">
                 <th class="px-4 py-3 font-medium">Amount</th>
@@ -573,7 +571,6 @@ watch(
               :key="bill.vnd_id"
               class="border-t border-neutral-100 dark:border-neutral-700"
             >
-              <td class="px-4 py-3 align-top">{{ bill.vnd_id }}</td>
               <td class="px-4 py-3 align-top">
                 <span :class="billNameClass(bill)">
                   {{ bill.vnd_bill }}
