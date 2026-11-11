@@ -348,40 +348,50 @@ watch(
       </div>
 
       <form class="space-y-4" @submit.prevent="onSearch">
-        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5">
+        <!-- Phone portrait: search on its own row, then each sort paired with its direction. -->
+        <div class="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-3 sm:grid-cols-2 lg:grid-cols-5">
           <input
             v-model="filters.vnd_bill2"
-            type="text"
-            placeholder="Bill Name"
-            class="form-control h-11 rounded-xl px-3 sm:col-span-2 lg:col-span-1"
+            type="search"
+            enterkeyhint="search"
+            placeholder="Search bill name"
+            class="form-control col-span-2 h-11 rounded-xl px-3 lg:col-span-1"
           />
-          <select v-model="filters.sort1" class="form-control h-11 rounded-xl px-3">
-            <option value="">- Select Sort 1 -</option>
+          <select v-model="filters.sort1" class="form-control h-11 rounded-xl px-3" aria-label="Sort 1">
+            <option value="">Sort by…</option>
             <option value="bill">Bill Name</option>
             <option value="frequency">Frequency</option>
             <option value="amount">Amount</option>
             <option value="start_date">Start Date</option>
             <option value="end_date">End Date</option>
           </select>
-          <select v-model="filters.sort1_dir" class="form-control h-11 rounded-xl px-3">
-            <option value="ASC">ASC</option>
-            <option value="DESC">DESC</option>
+          <select
+            v-model="filters.sort1_dir"
+            class="form-control h-11 rounded-xl px-3"
+            aria-label="Sort 1 direction"
+          >
+            <option value="ASC">↑ ASC</option>
+            <option value="DESC">↓ DESC</option>
           </select>
-          <select v-model="filters.sort2" class="form-control h-11 rounded-xl px-3">
-            <option value="">- Select Sort 2 -</option>
+          <select v-model="filters.sort2" class="form-control h-11 rounded-xl px-3" aria-label="Sort 2">
+            <option value="">Then by…</option>
             <option value="bill">Bill Name</option>
             <option value="frequency">Frequency</option>
             <option value="amount">Amount</option>
             <option value="start_date">Start Date</option>
             <option value="end_date">End Date</option>
           </select>
-          <select v-model="filters.sort2_dir" class="form-control h-11 rounded-xl px-3">
-            <option value="ASC">ASC</option>
-            <option value="DESC">DESC</option>
+          <select
+            v-model="filters.sort2_dir"
+            class="form-control h-11 rounded-xl px-3"
+            aria-label="Sort 2 direction"
+          >
+            <option value="ASC">↑ ASC</option>
+            <option value="DESC">↓ DESC</option>
           </select>
         </div>
 
-        <div class="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:gap-6">
+        <div class="flex flex-row flex-wrap gap-x-6 gap-y-3">
           <label class="inline-flex items-center gap-2 text-sm">
             <input v-model="filters.multiplierGreaterThan1" type="checkbox" class="rounded" />
             Multiplier
