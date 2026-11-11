@@ -206,13 +206,18 @@ async function checkJobsDone() {
   }
 }
 
-async function toggleFlag(bill, flag) {
-  const currentlyOn = flag === 'heavy' ? bill.is_heavy : bill.watch_flag
-  const action = currentlyOn ? 'unmark' : 'mark'
+/** A bill counts as "watched" only when both watch_flag and is_heavy are set. */
+function isWatched(bill) {
+  return Boolean(bill.watch_flag) && Boolean(bill.is_heavy)
+}
+
+/** Marks both watch_flag and is_heavy together (or clears both if already watched). */
+async function toggleWatched(bill) {
+  const action = isWatched(bill) ? 'unmark' : 'mark'
   try {
     const { data } = await api.post('/api/bills_admin/update_flags.php', {
       id: bill.vnd_id,
-      flag,
+      flag: 'watched',
       action,
     })
     mainMsg.value = data.message || 'Bill has been updated.'
@@ -525,16 +530,9 @@ watch(
             <button
               type="button"
               class="rounded-lg bg-primary-600 px-2.5 py-2 text-xs font-medium text-white hover:bg-primary-700"
-              @click="toggleFlag(bill, 'heavy')"
+              @click="toggleWatched(bill)"
             >
-              {{ bill.is_heavy ? 'Un-Mark Heavy' : 'Mark Heavy' }}
-            </button>
-            <button
-              type="button"
-              class="rounded-lg bg-primary-600 px-2.5 py-2 text-xs font-medium text-white hover:bg-primary-700"
-              @click="toggleFlag(bill, 'watch')"
-            >
-              {{ bill.watch_flag ? 'Un-Mark Watched' : 'Mark Watched' }}
+              {{ isWatched(bill) ? 'Un-Mark Watched' : 'Watched' }}
             </button>
             <button
               type="button"
@@ -631,16 +629,9 @@ watch(
                   <button
                     type="button"
                     class="rounded-lg bg-primary-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary-700"
-                    @click="toggleFlag(bill, 'heavy')"
+                    @click="toggleWatched(bill)"
                   >
-                    {{ bill.is_heavy ? 'Un-Mark Heavy' : 'Mark Heavy' }}
-                  </button>
-                  <button
-                    type="button"
-                    class="rounded-lg bg-primary-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-primary-700"
-                    @click="toggleFlag(bill, 'watch')"
-                  >
-                    {{ bill.watch_flag ? 'Un-Mark Watched' : 'Mark Watched' }}
+                    {{ isWatched(bill) ? 'Un-Mark Watched' : 'Watched' }}
                   </button>
                   <button
                     type="button"
