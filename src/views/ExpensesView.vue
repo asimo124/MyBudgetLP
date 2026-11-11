@@ -277,7 +277,6 @@ onMounted(loadExpenses)
               <th class="px-4 py-3 font-medium">Description</th>
               <th class="px-4 py-3 font-medium">Date</th>
               <th class="px-4 py-3 font-medium">Amount</th>
-              <th class="px-4 py-3 font-medium">Watched</th>
               <th class="px-4 py-3 font-medium">Actions</th>
             </tr>
           </thead>
@@ -304,12 +303,6 @@ onMounted(loadExpenses)
                   step="0.01"
                   class="form-control h-10 max-w-[8rem] rounded-lg px-3"
                 />
-              </td>
-              <td class="px-4 py-3 align-middle">
-                <label class="inline-flex items-center gap-2">
-                  <input v-model="item.watch_flag" type="checkbox" class="rounded" />
-                  Watched
-                </label>
               </td>
               <td class="px-4 py-3 align-middle">
                 <button
