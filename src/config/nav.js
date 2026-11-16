@@ -62,7 +62,7 @@ export const navGroups = [
       { name: 'Food Sensitivities', path: '/food-sensitivities', icon: 'ph-warning' },
       { name: 'Push Notifications', path: '/push-notifications', icon: 'ph-bell' },
       { name: 'Google Maps', path: '/google-maps', icon: 'ph-map-pin' },
-      // { name: 'Last Time I', path: '/last-time-i', icon: 'ph-clock-countdown' },
+      { name: 'Last Time I', path: '/last-time-i', icon: 'ph-clock-countdown' },
       // { name: 'Pending Transactions', path: '/pending-transactions', icon: 'ph-arrows-left-right' },
       // { name: 'Debt Progress', path: '/debt-progress', icon: 'ph-trend-down' },
     ],

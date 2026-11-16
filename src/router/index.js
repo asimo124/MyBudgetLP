@@ -26,6 +26,7 @@ import GroceryListView from '@/views/GroceryListView.vue'
 import DisposableBalancerView from '@/views/DisposableBalancerView.vue'
 import FoodSensitivitiesView from '@/views/FoodSensitivitiesView.vue'
 import SettingsView from '@/views/SettingsView.vue'
+import LastTimeView from '@/views/LastTimeView.vue'
 
 function slugToName(path) {
   return path.replace(/^\//, '').replace(/\//g, '-')
@@ -48,6 +49,7 @@ const REAL_VIEWS = {
   'apple-calendar-events': AppleCalendarEventsView,
   'grocery-list': GroceryListView,
   'food-sensitivities': FoodSensitivitiesView,
+  'last-time-i': LastTimeView,
   settings: SettingsView,
 }
 
