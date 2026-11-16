@@ -27,6 +27,7 @@ import DisposableBalancerView from '@/views/DisposableBalancerView.vue'
 import FoodSensitivitiesView from '@/views/FoodSensitivitiesView.vue'
 import SettingsView from '@/views/SettingsView.vue'
 import LastTimeView from '@/views/LastTimeView.vue'
+import SynchronyPendingView from '@/views/SynchronyPendingView.vue'
 
 function slugToName(path) {
   return path.replace(/^\//, '').replace(/\//g, '-')
@@ -50,6 +51,7 @@ const REAL_VIEWS = {
   'grocery-list': GroceryListView,
   'food-sensitivities': FoodSensitivitiesView,
   'last-time-i': LastTimeView,
+  'synchrony-pending': SynchronyPendingView,
   settings: SettingsView,
 }
 

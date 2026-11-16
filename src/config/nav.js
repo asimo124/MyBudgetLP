@@ -44,6 +44,7 @@ export const navGroups = [
       { name: 'Disposable Balancer', path: '/disposable-balancer', icon: 'ph-scales' },
       { name: 'Loan Countdown', path: '/loan-countdown', icon: 'ph-timer' },
       { name: 'Credit Utilization', path: '/credit-utilization', icon: 'ph-credit-card' },
+      { name: 'Synchrony Pending', path: '/synchrony-pending', icon: 'ph-hourglass' },
       { name: 'Disposable Tracker', path: '/disposable-tracker', icon: 'ph-chart-bar' },
       // { name: 'Queue Date Job', path: '/queue-date-job', icon: 'ph-queue' },
       { name: 'Audit Expenses', path: '/audit-expenses', icon: 'ph-magnifying-glass' },
