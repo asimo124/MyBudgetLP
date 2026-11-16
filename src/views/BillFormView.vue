@@ -38,12 +38,31 @@ const isEdit = computed(() => props.mode === 'edit')
 const pageTitle = computed(() => (isEdit.value ? 'Edit Bill' : 'Create Bill'))
 const showFrequencyOriginal = computed(() => form.vnd_frequency === 'Once Per Month')
 
+const WEEKLY_FREQUENCY = 'Every 1 Week'
+const DAY_OF_WEEK_TYPE = 'Day of Week'
+const isWeekly = computed(() => form.vnd_frequency === WEEKLY_FREQUENCY)
+
 const frequencyOptions = [
   'Once Per Month',
   'Every 4 Weeks',
   'Every 2 Weeks',
-  'Every 1 Week',
+  WEEKLY_FREQUENCY,
 ]
+
+// Stored as PHP date('w'): 0 = Sunday … 6 = Saturday.
+const dayOfWeekOptions = [
+  'Sunday',
+  'Monday',
+  'Tuesday',
+  'Wednesday',
+  'Thursday',
+  'Friday',
+  'Saturday',
+].map((label, value) => ({ label, value: String(value) }))
+
+function isDayOfWeekValue(val) {
+  return /^[0-6]$/.test(String(val ?? '').trim())
+}
 
 function computeFrequencyValueFromOriginal(raw) {
   const day2 = parseInt(raw, 10)
@@ -65,6 +84,13 @@ watch(
     if (oldVal === undefined) return
     if (val !== 'Once Per Month') {
       form.vnd_frequency_value_original = ''
+    }
+    if (val === WEEKLY_FREQUENCY) {
+      form.vnd_frequency_type = DAY_OF_WEEK_TYPE
+      if (!isDayOfWeekValue(form.vnd_frequency_value)) form.vnd_frequency_value = ''
+    } else if (oldVal === WEEKLY_FREQUENCY) {
+      form.vnd_frequency_type = 'Day of Month'
+      form.vnd_frequency_value = ''
     }
   }
 )
@@ -108,7 +134,14 @@ async function loadBill() {
     form.vnd_frequency = normalizeFrequencyForSelect(bill)
     form.vnd_frequency_type = bill.vnd_frequency_type || 'Day of Month'
     form.vnd_frequency_value_original = bill.vnd_frequency_value_original || ''
-    form.vnd_frequency_value = bill.vnd_frequency_value || ''
+    form.vnd_frequency_value = bill.vnd_frequency_value ?? ''
+    if (form.vnd_frequency === WEEKLY_FREQUENCY) {
+      // Older weekly bills stored a "Starting From" seed date; make the user pick a day.
+      form.vnd_frequency_type = DAY_OF_WEEK_TYPE
+      form.vnd_frequency_value = isDayOfWeekValue(form.vnd_frequency_value)
+        ? String(form.vnd_frequency_value).trim()
+        : ''
+    }
     form.can_be_multiplied_by = bill.can_be_multiplied_by || 1
     form.start_date = bill.start_date || ''
     form.end_date = bill.end_date || ''
@@ -144,6 +177,10 @@ async function onSubmit() {
   const payload = buildPayload()
   if (!payload.vnd_bill || !(payload.amount > 0)) {
     error.value = 'You did not fill in all the required fields.'
+    return
+  }
+  if (isWeekly.value && !isDayOfWeekValue(payload.vnd_frequency_value)) {
+    error.value = 'Choose the day of the week this bill is due.'
     return
   }
 
@@ -265,9 +302,13 @@ onMounted(async () => {
             id="vnd_frequency_type"
             v-model="form.vnd_frequency_type"
             class="form-control h-11 rounded-xl px-3"
+            :disabled="isWeekly"
           >
-            <option value="Day of Month">Day of Month</option>
-            <option value="Starting From">Starting From</option>
+            <option v-if="isWeekly" :value="DAY_OF_WEEK_TYPE">{{ DAY_OF_WEEK_TYPE }}</option>
+            <template v-else>
+              <option value="Day of Month">Day of Month</option>
+              <option value="Starting From">Starting From</option>
+            </template>
           </select>
         </div>
 
@@ -284,7 +325,24 @@ onMounted(async () => {
           />
         </div>
 
-        <div>
+        <div v-if="isWeekly">
+          <label class="mb-1.5 block text-sm font-medium" for="vnd_frequency_value">
+            Day of Week
+          </label>
+          <select
+            id="vnd_frequency_value"
+            v-model="form.vnd_frequency_value"
+            class="form-control h-11 rounded-xl px-3"
+            required
+          >
+            <option value="" disabled>Select a day</option>
+            <option v-for="day in dayOfWeekOptions" :key="day.value" :value="day.value">
+              {{ day.label }}
+            </option>
+          </select>
+        </div>
+
+        <div v-else>
           <label class="mb-1.5 block text-sm font-medium" for="vnd_frequency_value">
             Frequency Value
           </label>

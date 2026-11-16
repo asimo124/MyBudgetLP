@@ -100,7 +100,13 @@ function multiplierColor(multiplier) {
   return 'text-neutral-700 dark:text-neutral-300'
 }
 
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday']
+
 function frequencyInfo(bill) {
+  if (bill.vnd_frequency_type === 'Day of Week') {
+    const name = WEEKDAY_NAMES[Number(bill.vnd_frequency_value)]
+    return name ? `Every ${name}` : `Day of Week (${bill.vnd_frequency_value ?? ''})`
+  }
   if (bill.vnd_frequency_type !== 'Day of Month') {
     return `${bill.vnd_frequency_type || ''} (${bill.vnd_frequency_value ?? ''})`
   }
